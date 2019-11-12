@@ -2,7 +2,7 @@
     {
         "description": "Validation fails for invalid group reference",
         "action": {
-            "uuid": "8eebd020-1af5-431c-b943-aa670fc74da9",
+            "uuid": "ad154980-7bf7-4ab8-8728-545fd6378912",
             "type": "send_broadcast",
             "groups": [
                 {
@@ -15,9 +15,25 @@
         "validation_error": "missing dependencies: group[uuid=33382939-babf-4982-9395-8793feb4e7c6,name=Climbers]"
     },
     {
+        "description": "NOOP if no recipients",
+        "action": {
+            "uuid": "ad154980-7bf7-4ab8-8728-545fd6378912",
+            "type": "send_broadcast",
+            "text": "Hi there!"
+        },
+        "events": [],
+        "inspection": {
+            "templates": [
+                "Hi there!"
+            ],
+            "dependencies": [],
+            "results": []
+        }
+    },
+    {
         "description": "Broadcast created event for the message",
         "action": {
-            "uuid": "8eebd020-1af5-431c-b943-aa670fc74da9",
+            "uuid": "ad154980-7bf7-4ab8-8728-545fd6378912",
             "type": "send_broadcast",
             "urns": [
                 "tel:+1234567890"
@@ -37,15 +53,15 @@
             "legacy_vars": [
                 "@(\"\")",
                 "@contact.fields.gender",
-                "@(\"+1098765432\")"
+                "@(\"0788123123\")",
+                "@contact.urn"
             ],
             "text": "Hi there!"
         },
         "events": [
             {
                 "created_on": "2018-10-18T14:20:30.000123456Z",
-                "fatal": false,
-                "step_uuid": "e7187099-7d38-4f60-955c-325957214c42",
+                "step_uuid": "59d74b86-3e2f-4a93-aece-b05d2fdcde0c",
                 "text": "scheme or path cannot be empty",
                 "type": "error"
             },
@@ -64,33 +80,115 @@
                         "uuid": "b7cf0d83-f1c9-411c-96fd-c511a4cfa86d"
                     }
                 ],
-                "step_uuid": "e7187099-7d38-4f60-955c-325957214c42",
+                "step_uuid": "59d74b86-3e2f-4a93-aece-b05d2fdcde0c",
                 "translations": {
                     "eng": {
+                        "text": "Hi there!"
+                    },
+                    "spa": {
                         "text": "Hi there!"
                     }
                 },
                 "type": "broadcast_created",
                 "urns": [
                     "tel:+1234567890",
-                    "tel:Male",
-                    "tel:+1098765432"
+                    "tel:male",
+                    "tel:+250788123123",
+                    "tel:+12065551212"
                 ]
             }
         ],
         "inspection": {
             "templates": [
-                "Hi there!",
                 "@(\"\")",
                 "@contact.fields.gender",
-                "@(\"+1098765432\")"
+                "@(\"0788123123\")",
+                "@contact.urn",
+                "Hi there!"
             ],
             "dependencies": [
                 "field[key=gender,name=]",
                 "group[uuid=b7cf0d83-f1c9-411c-96fd-c511a4cfa86d,name=Testers]",
                 "contact[uuid=945493e3-933f-4668-9761-ce990fae5e5c,name=Stavros]"
             ],
-            "result_names": []
+            "results": []
+        }
+    },
+    {
+        "description": "Text, attachments and quick replies can be localized",
+        "action": {
+            "uuid": "ad154980-7bf7-4ab8-8728-545fd6378912",
+            "type": "send_broadcast",
+            "urns": [
+                "tel:+1234567890"
+            ],
+            "text": "Hi there!",
+            "attachments": [
+                "http://example.com/red.jpg"
+            ],
+            "quick_replies": [
+                "Yes",
+                "No"
+            ]
+        },
+        "localization": {
+            "text": [
+                "Hola!"
+            ],
+            "attachments": [
+                "http://example.com/rojo.jpg"
+            ],
+            "quick_replies": [
+                "Si",
+                "No"
+            ]
+        },
+        "events": [
+            {
+                "base_language": "eng",
+                "created_on": "2018-10-18T14:20:30.000123456Z",
+                "step_uuid": "59d74b86-3e2f-4a93-aece-b05d2fdcde0c",
+                "translations": {
+                    "eng": {
+                        "attachments": [
+                            "http://example.com/red.jpg"
+                        ],
+                        "quick_replies": [
+                            "Yes",
+                            "No"
+                        ],
+                        "text": "Hi there!"
+                    },
+                    "spa": {
+                        "attachments": [
+                            "http://example.com/rojo.jpg"
+                        ],
+                        "quick_replies": [
+                            "Si",
+                            "No"
+                        ],
+                        "text": "Hola!"
+                    }
+                },
+                "type": "broadcast_created",
+                "urns": [
+                    "tel:+1234567890"
+                ]
+            }
+        ],
+        "inspection": {
+            "dependencies": [],
+            "results": [],
+            "templates": [
+                "Hi there!",
+                "Hola!",
+                "http://example.com/red.jpg",
+                "http://example.com/rojo.jpg",
+                "Yes",
+                "No",
+                "Si",
+                "No"
+            ]
         }
     }
 ]

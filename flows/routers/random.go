@@ -1,14 +1,17 @@
 package routers
 
 import (
+	"encoding/json"
+
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/utils/random"
 
 	"github.com/shopspring/decimal"
 )
 
 func init() {
-	RegisterType(TypeRandom, func() flows.Router { return &RandomRouter{} })
+	registerType(TypeRandom, readRandomRouter)
 }
 
 // TypeRandom is the type for a random router
@@ -16,32 +19,56 @@ const TypeRandom string = "random"
 
 // RandomRouter is a router which will exit out a random exit
 type RandomRouter struct {
-	BaseRouter
+	baseRouter
 }
 
-// NewRandomRouter creates a new random router
-func NewRandomRouter(resultName string) *RandomRouter {
-	return &RandomRouter{newBaseRouter(TypeRandom, resultName)}
+// NewRandom creates a new random router
+func NewRandom(wait flows.Wait, resultName string, categories []*Category) *RandomRouter {
+	return &RandomRouter{newBaseRouter(TypeRandom, wait, resultName, categories)}
 }
 
 // Validate validates that the fields on this router are valid
 func (r *RandomRouter) Validate(exits []flows.Exit) error {
-	return utils.Validate(r)
+	return r.validate(exits)
 }
 
-// PickRoute picks a route randomly from our available exits
-func (r *RandomRouter) PickRoute(run flows.FlowRun, exits []flows.Exit, step flows.Step) (*string, flows.Route, error) {
-	if len(exits) == 0 {
-		return nil, flows.NoRoute, nil
+// Route determines which exit to take from a node
+func (r *RandomRouter) Route(run flows.FlowRun, step flows.Step, logEvent flows.EventCallback) (flows.ExitUUID, error) {
+	// pick a random category
+	rand := random.Decimal()
+	categoryNum := rand.Mul(decimal.New(int64(len(r.categories)), 0)).IntPart()
+	categoryUUID := r.categories[categoryNum].UUID()
+
+	// TODO should raw rand value be iput and category number the match ?
+	return r.routeToCategory(run, step, categoryUUID, rand.String(), "", nil, logEvent)
+}
+
+//------------------------------------------------------------------------------------------
+// JSON Encoding / Decoding
+//------------------------------------------------------------------------------------------
+
+func readRandomRouter(data json.RawMessage) (flows.Router, error) {
+	e := &baseRouterEnvelope{}
+	if err := utils.UnmarshalAndValidate(data, e); err != nil {
+		return nil, err
 	}
 
-	// pick a random exit
-	rand := utils.RandDecimal()
-	exitNum := rand.Mul(decimal.New(int64(len(exits)), 0)).IntPart()
-	return nil, flows.NewRoute(exits[exitNum].UUID(), rand.String(), nil), nil
+	r := &RandomRouter{}
+
+	if err := r.unmarshal(e); err != nil {
+		return nil, err
+	}
+
+	return r, nil
 }
 
-// Inspect inspects this object and any children
-func (r *RandomRouter) Inspect(inspect func(flows.Inspectable)) {
-	inspect(r)
+// MarshalJSON marshals this resume into JSON
+func (r *RandomRouter) MarshalJSON() ([]byte, error) {
+	e := &baseRouterEnvelope{}
+
+	if err := r.marshal(e); err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(e)
 }

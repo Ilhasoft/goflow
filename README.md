@@ -1,4 +1,4 @@
-# Goflow [![Build Status](https://travis-ci.org/nyaruka/goflow.svg?branch=master)](https://travis-ci.org/nyaruka/goflow) [![codecov](https://codecov.io/gh/nyaruka/goflow/branch/master/graph/badge.svg)](https://codecov.io/gh/nyaruka/goflow) [![Go Report Card](https://goreportcard.com/badge/github.com/nyaruka/goflow)](https://goreportcard.com/report/github.com/nyaruka/goflow)
+# Goflow [![Build Status](https://github.com/nyaruka/goflow/workflows/CI/badge.svg)](https://github.com/nyaruka/goflow/actions?query=workflow%3ACI) [![codecov](https://codecov.io/gh/nyaruka/goflow/branch/master/graph/badge.svg)](https://codecov.io/gh/nyaruka/goflow) [![Go Report Card](https://goreportcard.com/badge/github.com/nyaruka/goflow)](https://goreportcard.com/report/github.com/nyaruka/goflow)
 
 ## Specification
 
@@ -15,13 +15,12 @@ import (
 )
 
 source, _ := static.LoadSource("myassets.json")
-assets, _ := engine.NewSessionAssets(source)
+assets, _ := engine.NewSessionAssets(source, nil)
 contact := flows.NewContact(assets, ...)
-env := utils.NewEnvironmentBuilder().Build()
-trigger := triggers.NewManualTrigger(env, contact, flow.Reference(), nil, nil, time.Now())
-eng := engine.NewBuilder().WithDefaultUserAgent("goflow-flowrunner").Build()
-session := eng.NewSession(assets)
-session.Start(trigger)
+env := envs.NewBuilder().Build()
+trigger := triggers.NewManual(env, contact, flow.Reference(), nil, nil, time.Now())
+eng := engine.NewBuilder().Build()
+session, sprint, err := eng.NewSession(assets, trigger)
 ```
 
 ## Sessions
@@ -36,7 +35,7 @@ Provides a command line interface for stepping through a given flow.
 
 ```
 % go install github.com/nyaruka/goflow/cmd/flowrunner
-% $GOPATH/bin/flowrunner test/testdata/flows/two_questions.json 615b8a0f-588c-4d20-a05f-363b0b4ce6f4
+% $GOPATH/bin/flowrunner test/testdata/runner/two_questions.json 615b8a0f-588c-4d20-a05f-363b0b4ce6f4
 Starting flow 'U-Report Registration Flow'....
 ---------------------------------------
 💬 "Hi Ben Haggerty! What is your favorite color? (red/blue) Your number is (206) 555-1212"

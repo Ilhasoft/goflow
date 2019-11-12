@@ -2,9 +2,11 @@ package assets
 
 import (
 	"fmt"
+
 	validator "gopkg.in/go-playground/validator.v9"
 
 	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/utils/uuids"
 )
 
 func init() {
@@ -19,6 +21,12 @@ type Reference interface {
 	Type() string
 	Identity() string
 	Variable() bool
+}
+
+// UUIDReference is interface for all reference types that contain a UUID
+type UUIDReference interface {
+	Reference
+	GenericUUID() uuids.UUID
 }
 
 // ChannelReference is used to reference a channel
@@ -37,6 +45,11 @@ func (r *ChannelReference) Type() string {
 	return "channel"
 }
 
+// GenericUUID returns the untyped UUID
+func (r *ChannelReference) GenericUUID() uuids.UUID {
+	return uuids.UUID(r.UUID)
+}
+
 // Identity returns the unique identity of the asset
 func (r *ChannelReference) Identity() string {
 	return string(r.UUID)
@@ -51,13 +64,50 @@ func (r *ChannelReference) String() string {
 	return fmt.Sprintf("%s[uuid=%s,name=%s]", r.Type(), r.Identity(), r.Name)
 }
 
-var _ Reference = (*ChannelReference)(nil)
+var _ UUIDReference = (*ChannelReference)(nil)
+
+// ClassifierReference is used to reference a classifier
+type ClassifierReference struct {
+	UUID ClassifierUUID `json:"uuid" validate:"required,uuid"`
+	Name string         `json:"name"`
+}
+
+// NewClassifierReference creates a new classifier reference with the given UUID and name
+func NewClassifierReference(uuid ClassifierUUID, name string) *ClassifierReference {
+	return &ClassifierReference{UUID: uuid, Name: name}
+}
+
+// Type returns the name of the asset type
+func (r *ClassifierReference) Type() string {
+	return "classifier"
+}
+
+// GenericUUID returns the untyped UUID
+func (r *ClassifierReference) GenericUUID() uuids.UUID {
+	return uuids.UUID(r.UUID)
+}
+
+// Identity returns the unique identity of the asset
+func (r *ClassifierReference) Identity() string {
+	return string(r.UUID)
+}
+
+// Variable returns whether this a variable (vs concrete) reference
+func (r *ClassifierReference) Variable() bool {
+	return false
+}
+
+func (r *ClassifierReference) String() string {
+	return fmt.Sprintf("%s[uuid=%s,name=%s]", r.Type(), r.Identity(), r.Name)
+}
+
+var _ UUIDReference = (*ClassifierReference)(nil)
 
 // GroupReference is used to reference a group
 type GroupReference struct {
 	UUID      GroupUUID `json:"uuid,omitempty" validate:"omitempty,uuid4"`
 	Name      string    `json:"name,omitempty"`
-	NameMatch string    `json:"name_match,omitempty"`
+	NameMatch string    `json:"name_match,omitempty" engine:"evaluated"`
 }
 
 // NewGroupReference creates a new group reference with the given UUID and name
@@ -75,6 +125,11 @@ func (r *GroupReference) Type() string {
 	return "group"
 }
 
+// GenericUUID returns the untyped UUID
+func (r *GroupReference) GenericUUID() uuids.UUID {
+	return uuids.UUID(r.UUID)
+}
+
 // Identity returns the unique identity of the asset
 func (r *GroupReference) Identity() string {
 	return string(r.UUID)
@@ -89,7 +144,7 @@ func (r *GroupReference) String() string {
 	return fmt.Sprintf("%s[uuid=%s,name=%s]", r.Type(), r.Identity(), r.Name)
 }
 
-var _ Reference = (*GroupReference)(nil)
+var _ UUIDReference = (*GroupReference)(nil)
 
 // FieldReference is a reference to field
 type FieldReference struct {
@@ -139,6 +194,11 @@ func (r *FlowReference) Type() string {
 	return "flow"
 }
 
+// GenericUUID returns the untyped UUID
+func (r *FlowReference) GenericUUID() uuids.UUID {
+	return uuids.UUID(r.UUID)
+}
+
 // Identity returns the unique identity of the asset
 func (r *FlowReference) Identity() string {
 	return string(r.UUID)
@@ -153,13 +213,13 @@ func (r *FlowReference) String() string {
 	return fmt.Sprintf("%s[uuid=%s,name=%s]", r.Type(), r.Identity(), r.Name)
 }
 
-var _ Reference = (*FlowReference)(nil)
+var _ UUIDReference = (*FlowReference)(nil)
 
 // LabelReference is used to reference a label
 type LabelReference struct {
 	UUID      LabelUUID `json:"uuid,omitempty" validate:"omitempty,uuid4"`
 	Name      string    `json:"name,omitempty"`
-	NameMatch string    `json:"name_match,omitempty"`
+	NameMatch string    `json:"name_match,omitempty" engine:"evaluated"`
 }
 
 // NewLabelReference creates a new label reference with the given UUID and name
@@ -177,6 +237,11 @@ func (r *LabelReference) Type() string {
 	return "label"
 }
 
+// GenericUUID returns the untyped UUID
+func (r *LabelReference) GenericUUID() uuids.UUID {
+	return uuids.UUID(r.UUID)
+}
+
 // Identity returns the unique identity of the asset
 func (r *LabelReference) Identity() string {
 	return string(r.UUID)
@@ -191,20 +256,57 @@ func (r *LabelReference) String() string {
 	return fmt.Sprintf("%s[uuid=%s,name=%s]", r.Type(), r.Identity(), r.Name)
 }
 
-var _ Reference = (*LabelReference)(nil)
+var _ UUIDReference = (*LabelReference)(nil)
+
+// TemplateReference is used to reference a Template
+type TemplateReference struct {
+	UUID TemplateUUID `json:"uuid" validate:"required,uuid"`
+	Name string       `json:"name"`
+}
+
+// NewTemplateReference creates a new template reference with the given UUID and name
+func NewTemplateReference(uuid TemplateUUID, name string) *TemplateReference {
+	return &TemplateReference{UUID: uuid, Name: name}
+}
+
+// GenericUUID returns the untyped UUID
+func (r *TemplateReference) GenericUUID() uuids.UUID {
+	return uuids.UUID(r.UUID)
+}
+
+// Identity returns the unique identity of the asset
+func (r *TemplateReference) Identity() string {
+	return string(r.UUID)
+}
+
+// Type returns the name of the asset type
+func (r *TemplateReference) Type() string {
+	return "template"
+}
+
+func (r *TemplateReference) String() string {
+	return fmt.Sprintf("%s[uuid=%s,name=%s]", r.Type(), r.Identity(), r.Name)
+}
+
+// Variable returns whether this a variable (vs concrete) reference
+func (r *TemplateReference) Variable() bool {
+	return false
+}
+
+var _ UUIDReference = (*TemplateReference)(nil)
 
 //------------------------------------------------------------------------------------------
 // Callbacks for missing assets
 //------------------------------------------------------------------------------------------
 
 // MissingCallback is callback to be invoked when an asset is missing
-type MissingCallback func(Reference)
+type MissingCallback func(Reference, error)
 
 // PanicOnMissing panics if an asset is reported missing
-var PanicOnMissing MissingCallback = func(a Reference) { panic(fmt.Sprintf("unable to find asset %s", a.String())) }
+var PanicOnMissing MissingCallback = func(a Reference, err error) { panic(fmt.Sprintf("missing asset: %s, due to: %s", a, err)) }
 
 // IgnoreMissing does nothing if an asset is reported missing
-var IgnoreMissing MissingCallback = func(Reference) {}
+var IgnoreMissing MissingCallback = func(Reference, error) {}
 
 //------------------------------------------------------------------------------------------
 // Validation

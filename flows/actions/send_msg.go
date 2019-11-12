@@ -3,12 +3,13 @@ package actions
 import (
 	"github.com/nyaruka/gocommon/urns"
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/events"
 )
 
 func init() {
-	RegisterType(TypeSendMsg, func() flows.Action { return &SendMsgAction{} })
+	registerType(TypeSendMsg, func() flows.Action { return &SendMsgAction{} })
 }
 
 // TypeSendMsg is the type for the send message action
@@ -25,22 +26,36 @@ const TypeSendMsg string = "send_msg"
 //     "type": "send_msg",
 //     "text": "Hi @contact.name, are you ready to complete today's survey?",
 //     "attachments": [],
-//     "all_urns": false
+//     "all_urns": false,
+//     "templating": {
+//       "template": {
+//         "uuid": "3ce100b7-a734-4b4e-891b-350b1279ade2",
+//         "name": "revive_issue"
+//       },
+//       "variables": ["@contact.name"]
+//     }
 //   }
 //
 // @action send_msg
 type SendMsgAction struct {
-	BaseAction
+	baseAction
 	universalAction
 	createMsgAction
 
-	AllURNs bool `json:"all_urns,omitempty"`
+	AllURNs    bool        `json:"all_urns,omitempty"`
+	Templating *Templating `json:"templating,omitempty" validate:"omitempty,dive"`
 }
 
-// NewSendMsgAction creates a new send msg action
-func NewSendMsgAction(uuid flows.ActionUUID, text string, attachments []string, quickReplies []string, allURNs bool) *SendMsgAction {
+// Templating represents the templating that should be used if possible
+type Templating struct {
+	Template  *assets.TemplateReference `json:"template" validate:"required"`
+	Variables []string                  `json:"variables" engine:"evaluated"`
+}
+
+// NewSendMsg creates a new send msg action
+func NewSendMsg(uuid flows.ActionUUID, text string, attachments []string, quickReplies []string, allURNs bool) *SendMsgAction {
 	return &SendMsgAction{
-		BaseAction: NewBaseAction(TypeSendMsg, uuid),
+		baseAction: newBaseAction(TypeSendMsg, uuid),
 		createMsgAction: createMsgAction{
 			Text:         text,
 			Attachments:  attachments,
@@ -53,13 +68,15 @@ func NewSendMsgAction(uuid flows.ActionUUID, text string, attachments []string, 
 // Execute runs this action
 func (a *SendMsgAction) Execute(run flows.FlowRun, step flows.Step, logModifier flows.ModifierCallback, logEvent flows.EventCallback) error {
 	if run.Contact() == nil {
-		logEvent(events.NewErrorEventf("can't execute action in session without a contact"))
+		logEvent(events.NewErrorf("can't execute action in session without a contact"))
 		return nil
 	}
 
 	evaluatedText, evaluatedAttachments, evaluatedQuickReplies := a.evaluateMessage(run, nil, a.Text, a.Attachments, a.QuickReplies, logEvent)
 
 	destinations := run.Contact().ResolveDestinations(a.AllURNs)
+
+	sa := run.Session().Assets()
 
 	// create a new message for each URN+channel destination
 	for _, dest := range destinations {
@@ -68,41 +85,37 @@ func (a *SendMsgAction) Execute(run flows.FlowRun, step flows.Step, logModifier 
 			channelRef = assets.NewChannelReference(dest.Channel.UUID(), dest.Channel.Name())
 		}
 
-		msg := flows.NewMsgOut(dest.URN.URN(), channelRef, evaluatedText, evaluatedAttachments, evaluatedQuickReplies)
-		logEvent(events.NewMsgCreatedEvent(msg))
+		var templating *flows.MsgTemplating
+
+		// do we have a template defined?
+		if a.Templating != nil {
+			translation := sa.Templates().FindTranslation(a.Templating.Template.UUID, channelRef, []envs.Language{run.Contact().Language(), run.Environment().DefaultLanguage()})
+			if translation != nil {
+				// evaluate our variables
+				templateVariables := make([]string, len(a.Templating.Variables))
+				for i, t := range a.Templating.Variables {
+					sub, err := run.EvaluateTemplate(t)
+					if err != nil {
+						logEvent(events.NewError(err))
+					}
+					templateVariables[i] = sub
+				}
+
+				evaluatedText = translation.Substitute(templateVariables)
+				templating = flows.NewMsgTemplating(a.Templating.Template, translation.Language(), templateVariables)
+			}
+		}
+
+		msg := flows.NewMsgOut(dest.URN.URN(), channelRef, evaluatedText, evaluatedAttachments, evaluatedQuickReplies, templating)
+		logEvent(events.NewMsgCreated(msg))
 	}
 
 	// if we couldn't find a destination, create a msg without a URN or channel and it's up to the caller
 	// to handle that as they want
 	if len(destinations) == 0 {
-		msg := flows.NewMsgOut(urns.NilURN, nil, evaluatedText, evaluatedAttachments, evaluatedQuickReplies)
-		logEvent(events.NewMsgCreatedEvent(msg))
+		msg := flows.NewMsgOut(urns.NilURN, nil, evaluatedText, evaluatedAttachments, evaluatedQuickReplies, nil)
+		logEvent(events.NewMsgCreated(msg))
 	}
 
 	return nil
-}
-
-// Inspect inspects this object and any children
-func (a *SendMsgAction) Inspect(inspect func(flows.Inspectable)) {
-	inspect(a)
-}
-
-// EnumerateTemplates enumerates all expressions on this object and its children
-func (a *SendMsgAction) EnumerateTemplates(localization flows.Localization, include func(string)) {
-	include(a.Text)
-	flows.EnumerateTemplateArray(a.Attachments, include)
-	flows.EnumerateTemplateArray(a.QuickReplies, include)
-	flows.EnumerateTemplateTranslations(localization, a, "text", include)
-	flows.EnumerateTemplateTranslations(localization, a, "attachments", include)
-	flows.EnumerateTemplateTranslations(localization, a, "quick_replies", include)
-}
-
-// RewriteTemplates rewrites all templates on this object and its children
-func (a *SendMsgAction) RewriteTemplates(localization flows.Localization, rewrite func(string) string) {
-	a.Text = rewrite(a.Text)
-	flows.RewriteTemplateArray(a.Attachments, rewrite)
-	flows.RewriteTemplateArray(a.QuickReplies, rewrite)
-	flows.RewriteTemplateTranslations(localization, a, "text", rewrite)
-	flows.RewriteTemplateTranslations(localization, a, "attachments", rewrite)
-	flows.RewriteTemplateTranslations(localization, a, "quick_replies", rewrite)
 }

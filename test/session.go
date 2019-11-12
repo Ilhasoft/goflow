@@ -2,10 +2,12 @@ package test
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/nyaruka/goflow/assets"
 	"github.com/nyaruka/goflow/assets/static"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/engine"
 	"github.com/nyaruka/goflow/flows/resumes"
@@ -38,11 +40,19 @@ var sessionAssets = `{
             "roles": ["send", "receive"]
         }
     ],
+    "classifiers": [
+        {
+            "uuid": "1c06c884-39dd-4ce4-ad9f-9a01cbe6c000",
+            "name": "Booking",
+            "type": "wit",
+            "intents": ["book_flight", "book_hotel"]
+        }
+    ],
     "flows": [
         {
             "uuid": "50c3706e-fedb-42c0-8eab-dda3335714b7",
             "name": "Registration",
-            "spec_version": "12.0",
+            "spec_version": "13.0",
             "language": "eng",
             "type": "messaging",
             "revision": 123,
@@ -62,26 +72,31 @@ var sessionAssets = `{
                     "exits": [
                         {
                             "uuid": "d7a36118-0a38-4b35-a7e4-ae89042f0d3c",
-                            "destination_node_uuid": "3dcccbb4-d29c-41dd-a01f-16d814c9ab82"
+                            "destination_uuid": "3dcccbb4-d29c-41dd-a01f-16d814c9ab82"
                         }
                     ]
                 },
                 {
                     "uuid": "3dcccbb4-d29c-41dd-a01f-16d814c9ab82",
-                    "wait": {
-                        "type": "msg",
-                        "timeout": 600
-                    },
                     "router": {
                         "type": "switch",
-                        "default_exit_uuid": "37d8813f-1402-4ad2-9cc2-e9054a96525b",
-                        "operand": "@input"
+                        "wait": {
+                            "type": "msg"
+                        },
+                        "categories": [
+                            {
+                                "uuid": "37d8813f-1402-4ad2-9cc2-e9054a96525b",
+                                "name": "All Responses",
+                                "exit_uuid": "100f2d68-2481-4137-a0a3-177620ba3c5f"
+                            }
+                        ],
+                        "operand": "@input.text",
+                        "default_category_uuid": "37d8813f-1402-4ad2-9cc2-e9054a96525b"
                     },
                     "exits": [
                         {
-                            "uuid": "37d8813f-1402-4ad2-9cc2-e9054a96525b",
-                            "name": "All Responses",
-                            "destination_node_uuid": "f5bb9b7a-7b5e-45c3-8f0e-61b4e95edf03"
+                            "uuid": "100f2d68-2481-4137-a0a3-177620ba3c5f",
+                            "destination_uuid": "f5bb9b7a-7b5e-45c3-8f0e-61b4e95edf03"
                         }
                     ]
                 },
@@ -113,12 +128,22 @@ var sessionAssets = `{
                             "method": "GET",
                             "url": "http://localhost/?content=%7B%22results%22%3A%5B%7B%22state%22%3A%22WA%22%7D%2C%7B%22state%22%3A%22IN%22%7D%5D%7D",
                             "result_name": "webhook"
+                        },
+                        {
+                            "uuid": "bd821625-5254-40ca-be17-e9a4dc5bde99",
+                            "type": "call_classifier",
+                            "classifier": {
+                                "uuid": "1c06c884-39dd-4ce4-ad9f-9a01cbe6c000",
+                                "name": "Booking"
+                            },
+                            "input": "@input.text",
+                            "result_name": "intent"
                         }
                     ],
                     "exits": [
                         {
                             "uuid": "d898f9a4-f0fc-4ac4-a639-c98c602bb511",
-                            "destination_node_uuid": "c0781400-737f-4940-9a6c-1ec1c3df0325"
+                            "destination_uuid": "c0781400-737f-4940-9a6c-1ec1c3df0325"
                         }
                     ]
                 },
@@ -136,7 +161,7 @@ var sessionAssets = `{
         {
             "uuid": "b7cf0d83-f1c9-411c-96fd-c511a4cfa86d",
             "name": "Collect Age",
-            "spec_version": "12.0",
+            "spec_version": "13.0",
             "language": "eng",
             "type": "messaging",
             "nodes": [{
@@ -156,7 +181,7 @@ var sessionAssets = `{
                             "key": "age",
                             "name": "Age"
                         },
-                        "value": "@results.age"
+                        "value": "@results.age.value"
                     }
                 ],
                 "exits": [
@@ -169,7 +194,7 @@ var sessionAssets = `{
         {
             "uuid": "fece6eac-9127-4343-9269-56e88f391562",
             "name": "Parent",
-            "spec_version": "12.0",
+            "spec_version": "13.0",
             "language": "eng",
             "type": "messaging",
             "nodes": []
@@ -177,18 +202,18 @@ var sessionAssets = `{
         {
             "uuid": "aa71426e-13bd-4607-a4f5-77666ff9c4bf",
             "name": "Voice Test",
-            "spec_version": "12.0",
+            "spec_version": "13.0",
             "language": "eng",
             "type": "voice",
             "nodes": []
         }
     ],
     "fields": [
-        {"key": "gender", "name": "Gender", "type": "text"},
-        {"key": "age", "name": "Age", "type": "number"},
-        {"key": "join_date", "name": "Join Date", "type": "datetime"},
-        {"key": "activation_token", "name": "Activation Token", "type": "text"},
-        {"key": "not_set", "name": "Not set", "type": "text"}
+        {"uuid": "d66a7823-eada-40e5-9a3a-57239d4690bf", "key": "gender", "name": "Gender", "type": "text"},
+        {"uuid": "f1b5aea6-6586-41c7-9020-1a6326cc6565", "key": "age", "name": "Age", "type": "number"},
+        {"uuid": "6c86d5ab-3fd9-4a5c-a5b6-48168b016747", "key": "join_date", "name": "Join Date", "type": "datetime"},
+        {"uuid": "c88d2640-d124-438a-b666-5ec53a353dcd", "key": "activation_token", "name": "Activation Token", "type": "text"},
+        {"uuid": "3bfc3908-a402-48ea-841c-b73b5ef3a254", "key": "not_set", "name": "Not set", "type": "text"}
     ],
     "groups": [
         {"uuid": "b7cf0d83-f1c9-411c-96fd-c511a4cfa86d", "name": "Testers"},
@@ -305,14 +330,14 @@ var sessionTrigger = `{
         "status": "active"
     },
     "environment": {
-        "date_format": "YYYY-MM-DD",
+        "date_format": "DD-MM-YYYY",
         "default_language": "eng",
         "allowed_languages": [
             "eng", 
             "spa"
         ],
         "redaction_policy": "none",
-        "time_format": "hh:mm",
+        "time_format": "tt:mm",
         "timezone": "America/Guayaquil"
     },
     "params": {"source": "website","address": {"state": "WA"}}
@@ -357,22 +382,24 @@ var voiceSessionAssets = `{
         {
             "uuid": "aa71426e-13bd-4607-a4f5-77666ff9c4bf",
             "name": "Voice Test",
-            "spec_version": "12.0",
+            "spec_version": "13.0",
             "language": "eng",
             "type": "voice",
             "nodes": [
                 {
                     "uuid": "6da04a32-6c84-40d9-b614-3782fde7af80",
-                    "type": "set_run_result",
-                    "name": "Age",
-                    "value": "23",
-                    "category": "Youth"
+                    "actions": [],
+                    "exits": [
+                        {
+                            "uuid": "9082b6ec-a65f-4677-8b3c-2f8de402ff13"
+                        }
+                    ]
                 }
             ]
         }
     ],
     "fields": [
-        {"key": "gender", "name": "Gender", "type": "text"}
+        {"uuid": "d66a7823-eada-40e5-9a3a-57239d4690bf", "key": "gender", "name": "Gender", "type": "text"}
     ],
     "groups": [
         {"uuid": "b7cf0d83-f1c9-411c-96fd-c511a4cfa86d", "name": "Testers"},
@@ -427,62 +454,57 @@ var voiceSessionTrigger = `{
 }`
 
 // CreateTestSession creates a standard example session for testing
-func CreateTestSession(testServerURL string, actionToAdd flows.Action) (flows.Session, []flows.Event, error) {
+func CreateTestSession(testServerURL string, redact envs.RedactionPolicy) (flows.Session, []flows.Event, error) {
+	assetsJSON := json.RawMessage(sessionAssets)
 
-	session, err := CreateSession(json.RawMessage(sessionAssets), testServerURL)
+	sa, err := CreateSessionAssets(assetsJSON, testServerURL)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error creating test session")
 	}
 
-	// optional modify the main flow by adding the provided action to the last node
-	if actionToAdd != nil {
-		flow, _ := session.Assets().Flows().Get(assets.FlowUUID("50c3706e-fedb-42c0-8eab-dda3335714b7"))
-		flow.Nodes()[len(flow.Nodes())-1].AddAction(actionToAdd)
-	}
-
 	// read our trigger
-	trigger, err := triggers.ReadTrigger(session.Assets(), json.RawMessage(sessionTrigger), assets.PanicOnMissing)
+	triggerJSON := json.RawMessage(sessionTrigger)
+	triggerJSON = JSONReplace(triggerJSON, []string{"environment", "redaction_policy"}, []byte(fmt.Sprintf(`"%s"`, redact)))
+
+	trigger, err := triggers.ReadTrigger(sa, triggerJSON, assets.PanicOnMissing)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error reading trigger")
 	}
 
-	_, err = session.Start(trigger)
+	eng := NewEngine()
+
+	session, sprint, err := eng.NewSession(sa, trigger)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error starting test session")
 	}
 
 	// read our resume
-	resume, err := resumes.ReadResume(session.Assets(), json.RawMessage(sessionResume), assets.PanicOnMissing)
+	resume, err := resumes.ReadResume(sa, json.RawMessage(sessionResume), assets.PanicOnMissing)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error reading resume")
 	}
 
-	sprint, err := session.Resume(resume)
+	sprint, err = session.Resume(resume)
 	return session, sprint.Events(), err
 }
 
 // CreateTestVoiceSession creates a standard example session for testing voice flows and actions
-func CreateTestVoiceSession(testServerURL string, actionToAdd flows.Action) (flows.Session, []flows.Event, error) {
+func CreateTestVoiceSession(testServerURL string) (flows.Session, []flows.Event, error) {
+	assetsJSON := json.RawMessage(voiceSessionAssets)
 
-	session, err := CreateSession(json.RawMessage(voiceSessionAssets), testServerURL)
+	sa, err := CreateSessionAssets(assetsJSON, testServerURL)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "error creating test voice session")
-	}
-
-	// optional modify the main flow by adding the provided action to the last node
-	if actionToAdd != nil {
-		flow, _ := session.Assets().Flows().Get(assets.FlowUUID("aa71426e-13bd-4607-a4f5-77666ff9c4bf"))
-		nodes := flow.Nodes()
-		nodes[len(nodes)-1].AddAction(actionToAdd)
+		return nil, nil, errors.Wrap(err, "error creating test voice session assets")
 	}
 
 	// read our trigger
-	trigger, err := triggers.ReadTrigger(session.Assets(), json.RawMessage(voiceSessionTrigger), assets.PanicOnMissing)
+	trigger, err := triggers.ReadTrigger(sa, json.RawMessage(voiceSessionTrigger), assets.PanicOnMissing)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error reading trigger")
 	}
 
-	sprint, err := session.Start(trigger)
+	eng := NewEngine()
+	session, sprint, err := eng.NewSession(sa, trigger)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error starting test voice session")
 	}
@@ -490,8 +512,8 @@ func CreateTestVoiceSession(testServerURL string, actionToAdd flows.Action) (flo
 	return session, sprint.Events(), err
 }
 
-// CreateSession creates a session with the given assets
-func CreateSession(assetsJSON json.RawMessage, testServerURL string) (flows.Session, error) {
+// CreateSessionAssets creates assets from given JSON
+func CreateSessionAssets(assetsJSON json.RawMessage, testServerURL string) (flows.SessionAssets, error) {
 	// different tests different ports for the test HTTP server
 	if testServerURL != "" {
 		assetsJSON = json.RawMessage(strings.Replace(string(assetsJSON), "http://localhost", testServerURL, -1))
@@ -504,12 +526,24 @@ func CreateSession(assetsJSON json.RawMessage, testServerURL string) (flows.Sess
 	}
 
 	// create our engine session
-	assets, err := engine.NewSessionAssets(source)
+	sa, err := engine.NewSessionAssets(source, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating test session assets")
 	}
 
-	eng := engine.NewBuilder().WithDefaultUserAgent("goflow-testing").Build()
-	session := eng.NewSession(assets)
-	return session, nil
+	return sa, nil
+}
+
+// EventLog is a utility for testing things which take an event logger function
+type EventLog struct {
+	Events []flows.Event
+}
+
+// NewEventLog creates a new event log
+func NewEventLog() *EventLog {
+	return &EventLog{make([]flows.Event, 0)}
+}
+
+func (l *EventLog) Log(e flows.Event) {
+	l.Events = append(l.Events, e)
 }

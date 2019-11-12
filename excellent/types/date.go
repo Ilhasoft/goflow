@@ -1,43 +1,68 @@
 package types
 
 import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/utils/dates"
 )
 
-// XDate is a date value
+// XDate is a Gregorian calendar date value.
+//
+//   @(date_from_parts(2019, 4, 11)) -> 2019-04-11
+//   @(format_date(date_from_parts(2019, 4, 11))) -> 11-04-2019
+//   @(json(date_from_parts(2019, 4, 11))) -> "2019-04-11"
+//
+// @type date
 type XDate struct {
-	native utils.Date
+	native dates.Date
 }
 
 // NewXDate creates a new date
-func NewXDate(value utils.Date) XDate {
+func NewXDate(value dates.Date) XDate {
 	return XDate{native: value}
 }
 
 // Describe returns a representation of this type for error messages
 func (x XDate) Describe() string { return "date" }
 
-// Reduce returns the primitive version of this type (i.e. itself)
-func (x XDate) Reduce(env utils.Environment) XPrimitive { return x }
-
-// ToXText converts this type to text
-func (x XDate) ToXText(env utils.Environment) XText { return NewXText(x.Native().String()) }
-
-// ToXBoolean converts this type to a bool
-func (x XDate) ToXBoolean(env utils.Environment) XBoolean {
-	return NewXBoolean(x != XDateZero)
+// Truthy determines truthiness for this type
+func (x XDate) Truthy() bool {
+	return x != XDateZero
 }
 
-// ToXJSON is called when this type is passed to @(json(...))
-func (x XDate) ToXJSON(env utils.Environment) XText {
-	return MustMarshalToXText(x.Native().String())
+// Render returns the canonical text representation
+func (x XDate) Render() string { return x.Native().String() }
+
+// Format returns the pretty text representation
+func (x XDate) Format(env envs.Environment) string {
+	formatted, _ := x.FormatCustom(env.DateFormat())
+	return formatted
+}
+
+// FormatCustom provides customised formatting
+func (x XDate) FormatCustom(format envs.DateFormat) (string, error) {
+	goFormat, err := envs.ToGoDateFormat(string(format), envs.DateOnlyFormatting)
+	if err != nil {
+		return "", err
+	}
+	return x.Native().Format(goFormat), nil
+}
+
+// MarshalJSON is called when a struct containing this type is marshaled
+func (x XDate) MarshalJSON() ([]byte, error) {
+	return json.Marshal(x.Native().String())
+}
+
+// String returns the native string representation of this type
+func (x XDate) String() string {
+	return fmt.Sprintf(`XDate(%d, %d, %d)`, x.native.Year, x.native.Month, x.native.Day)
 }
 
 // Native returns the native value of this type
-func (x XDate) Native() utils.Date { return x.native }
-
-// String returns the native string representation of this type
-func (x XDate) String() string { return x.ToXText(nil).Native() }
+func (x XDate) Native() dates.Date { return x.native }
 
 // Equals determines equality for this type
 func (x XDate) Equals(other XDate) bool {
@@ -50,14 +75,12 @@ func (x XDate) Compare(other XDate) int {
 }
 
 // XDateZero is the zero time value
-var XDateZero = NewXDate(utils.ZeroDate)
-var _ XPrimitive = XDateZero
+var XDateZero = NewXDate(dates.ZeroDate)
+var _ XValue = XDateZero
 
 // ToXDate converts the given value to a time or returns an error if that isn't possible
-func ToXDate(env utils.Environment, x XValue) (XDate, XError) {
+func ToXDate(env envs.Environment, x XValue) (XDate, XError) {
 	if !utils.IsNil(x) {
-		x = x.Reduce(env)
-
 		switch typed := x.(type) {
 		case XError:
 			return XDateZero, typed
@@ -66,9 +89,13 @@ func ToXDate(env utils.Environment, x XValue) (XDate, XError) {
 		case XDateTime:
 			return typed.In(env.Timezone()).Date(), nil
 		case XText:
-			parsed, err := utils.DateFromString(env, typed.Native())
+			parsed, err := envs.DateFromString(env, typed.Native())
 			if err == nil {
 				return NewXDate(parsed), nil
+			}
+		case *XObject:
+			if typed.hasDefault() {
+				return ToXDate(env, typed.Default())
 			}
 		}
 	}

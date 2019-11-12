@@ -3,13 +3,13 @@ package actions
 import (
 	"github.com/nyaruka/gocommon/urns"
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/events"
-	"github.com/nyaruka/goflow/utils"
 )
 
 func init() {
-	RegisterType(TypeSendBroadcast, func() flows.Action { return &SendBroadcastAction{} })
+	registerType(TypeSendBroadcast, func() flows.Action { return &SendBroadcastAction{} })
 }
 
 // TypeSendBroadcast is the type for the send broadcast action
@@ -30,16 +30,16 @@ const TypeSendBroadcast string = "send_broadcast"
 //
 // @action send_broadcast
 type SendBroadcastAction struct {
-	BaseAction
+	baseAction
 	onlineAction
 	otherContactsAction
 	createMsgAction
 }
 
-// NewSendBroadcastAction creates a new send broadcast action
-func NewSendBroadcastAction(uuid flows.ActionUUID, text string, attachments []string, quickReplies []string, urns []urns.URN, contacts []*flows.ContactReference, groups []*assets.GroupReference, legacyVars []string) *SendBroadcastAction {
+// NewSendBroadcast creates a new send broadcast action
+func NewSendBroadcast(uuid flows.ActionUUID, text string, attachments []string, quickReplies []string, urns []urns.URN, contacts []*flows.ContactReference, groups []*assets.GroupReference, legacyVars []string) *SendBroadcastAction {
 	return &SendBroadcastAction{
-		BaseAction: NewBaseAction(TypeSendBroadcast, uuid),
+		baseAction: newBaseAction(TypeSendBroadcast, uuid),
 		otherContactsAction: otherContactsAction{
 			URNs:       urns,
 			Contacts:   contacts,
@@ -56,17 +56,17 @@ func NewSendBroadcastAction(uuid flows.ActionUUID, text string, attachments []st
 
 // Execute runs this action
 func (a *SendBroadcastAction) Execute(run flows.FlowRun, step flows.Step, logModifier flows.ModifierCallback, logEvent flows.EventCallback) error {
-	urnList, contactRefs, groupRefs, err := a.resolveContactsAndGroups(run, a.URNs, a.Contacts, a.Groups, a.LegacyVars, logEvent)
+	groupRefs, contactRefs, _, urnList, err := a.resolveRecipients(run, logEvent)
 	if err != nil {
 		return err
 	}
 
-	translations := make(map[utils.Language]*events.BroadcastTranslation)
-	languages := append([]utils.Language{run.Flow().Language()}, run.Flow().Localization().Languages()...)
+	translations := make(map[envs.Language]*events.BroadcastTranslation)
+	languages := append([]envs.Language{run.Flow().Language()}, run.Flow().Localization().Languages()...)
 
 	// evaluate the broadcast in each language we have translations for
 	for _, language := range languages {
-		languages := []utils.Language{language, run.Flow().Language()}
+		languages := []envs.Language{language, run.Flow().Language()}
 
 		evaluatedText, evaluatedAttachments, evaluatedQuickReplies := a.evaluateMessage(run, languages, a.Text, a.Attachments, a.QuickReplies, logEvent)
 		translations[language] = &events.BroadcastTranslation{
@@ -76,41 +76,10 @@ func (a *SendBroadcastAction) Execute(run flows.FlowRun, step flows.Step, logMod
 		}
 	}
 
-	logEvent(events.NewBroadcastCreatedEvent(translations, run.Flow().Language(), urnList, contactRefs, groupRefs))
+	// if we have any recipients, log an event
+	if len(urnList) > 0 || len(contactRefs) > 0 || len(groupRefs) > 0 {
+		logEvent(events.NewBroadcastCreated(translations, run.Flow().Language(), groupRefs, contactRefs, urnList))
+	}
 
 	return nil
-}
-
-// Inspect inspects this object and any children
-func (a *SendBroadcastAction) Inspect(inspect func(flows.Inspectable)) {
-	inspect(a)
-
-	for _, g := range a.Groups {
-		flows.InspectReference(g, inspect)
-	}
-	for _, c := range a.Contacts {
-		flows.InspectReference(c, inspect)
-	}
-}
-
-// EnumerateTemplates enumerates all expressions on this object and its children
-func (a *SendBroadcastAction) EnumerateTemplates(localization flows.Localization, include func(string)) {
-	include(a.Text)
-	flows.EnumerateTemplateArray(a.Attachments, include)
-	flows.EnumerateTemplateArray(a.QuickReplies, include)
-	flows.EnumerateTemplateTranslations(localization, a, "text", include)
-	flows.EnumerateTemplateTranslations(localization, a, "attachments", include)
-	flows.EnumerateTemplateTranslations(localization, a, "quick_replies", include)
-	flows.EnumerateTemplateArray(a.LegacyVars, include)
-}
-
-// RewriteTemplates rewrites all templates on this object and its children
-func (a *SendBroadcastAction) RewriteTemplates(localization flows.Localization, rewrite func(string) string) {
-	a.Text = rewrite(a.Text)
-	flows.RewriteTemplateArray(a.Attachments, rewrite)
-	flows.RewriteTemplateArray(a.QuickReplies, rewrite)
-	flows.RewriteTemplateTranslations(localization, a, "text", rewrite)
-	flows.RewriteTemplateTranslations(localization, a, "attachments", rewrite)
-	flows.RewriteTemplateTranslations(localization, a, "quick_replies", rewrite)
-	flows.RewriteTemplateArray(a.LegacyVars, rewrite)
 }

@@ -3,14 +3,14 @@ package actions
 import (
 	"strings"
 
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/actions/modifiers"
 	"github.com/nyaruka/goflow/flows/events"
-	"github.com/nyaruka/goflow/utils"
 )
 
 func init() {
-	RegisterType(TypeSetContactLanguage, func() flows.Action { return &SetContactLanguageAction{} })
+	registerType(TypeSetContactLanguage, func() flows.Action { return &SetContactLanguageAction{} })
 }
 
 // TypeSetContactLanguage is the type for the set contact Language action
@@ -28,16 +28,16 @@ const TypeSetContactLanguage string = "set_contact_language"
 //
 // @action set_contact_language
 type SetContactLanguageAction struct {
-	BaseAction
+	baseAction
 	universalAction
 
-	Language string `json:"language"`
+	Language string `json:"language" engine:"evaluated"`
 }
 
-// NewSetContactLanguageAction creates a new set language action
-func NewSetContactLanguageAction(uuid flows.ActionUUID, language string) *SetContactLanguageAction {
+// NewSetContactLanguage creates a new set language action
+func NewSetContactLanguage(uuid flows.ActionUUID, language string) *SetContactLanguageAction {
 	return &SetContactLanguageAction{
-		BaseAction: NewBaseAction(TypeSetContactLanguage, uuid),
+		baseAction: newBaseAction(TypeSetContactLanguage, uuid),
 		Language:   language,
 	}
 }
@@ -45,7 +45,7 @@ func NewSetContactLanguageAction(uuid flows.ActionUUID, language string) *SetCon
 // Execute runs this action
 func (a *SetContactLanguageAction) Execute(run flows.FlowRun, step flows.Step, logModifier flows.ModifierCallback, logEvent flows.EventCallback) error {
 	if run.Contact() == nil {
-		logEvent(events.NewErrorEventf("can't execute action in session without a contact"))
+		logEvent(events.NewErrorf("can't execute action in session without a contact"))
 		return nil
 	}
 
@@ -54,35 +54,20 @@ func (a *SetContactLanguageAction) Execute(run flows.FlowRun, step flows.Step, l
 
 	// if we received an error, log it
 	if err != nil {
-		logEvent(events.NewErrorEvent(err))
+		logEvent(events.NewError(err))
 		return nil
 	}
 
 	// language must be empty or valid language code
-	lang := utils.NilLanguage
+	lang := envs.NilLanguage
 	if language != "" {
-		lang, err = utils.ParseLanguage(language)
+		lang, err = envs.ParseLanguage(language)
 		if err != nil {
-			logEvent(events.NewErrorEvent(err))
+			logEvent(events.NewError(err))
 			return nil
 		}
 	}
 
-	a.applyModifier(run, modifiers.NewLanguageModifier(lang), logModifier, logEvent)
+	a.applyModifier(run, modifiers.NewLanguage(lang), logModifier, logEvent)
 	return nil
-}
-
-// Inspect inspects this object and any children
-func (a *SetContactLanguageAction) Inspect(inspect func(flows.Inspectable)) {
-	inspect(a)
-}
-
-// EnumerateTemplates enumerates all expressions on this object and its children
-func (a *SetContactLanguageAction) EnumerateTemplates(localization flows.Localization, include func(string)) {
-	include(a.Language)
-}
-
-// RewriteTemplates rewrites all templates on this object and its children
-func (a *SetContactLanguageAction) RewriteTemplates(localization flows.Localization, rewrite func(string) string) {
-	a.Language = rewrite(a.Language)
 }

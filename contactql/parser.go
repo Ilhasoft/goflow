@@ -6,43 +6,81 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nyaruka/goflow/assets"
 	"github.com/nyaruka/goflow/contactql/gen"
-	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/envs"
 
 	"github.com/antlr/antlr4/runtime/Go/antlr"
 	"github.com/pkg/errors"
 	"github.com/shopspring/decimal"
 )
 
-type boolOp string
+// BoolOperator is a boolean operator (and or or)
+type BoolOperator string
 
 const (
-	boolOpAnd boolOp = "and"
-	boolOpOr  boolOp = "or"
+	// BoolOperatorAnd is our constant for an AND operation
+	BoolOperatorAnd BoolOperator = "and"
+
+	// BoolOperatorOr is our constant for an OR operation
+	BoolOperatorOr BoolOperator = "or"
+)
+
+// PropertyType is the type of the lefthand side of a condition
+type PropertyType string
+
+const (
+	// PropertyTypeAttribute is builtin property
+	PropertyTypeAttribute PropertyType = "attribute"
+
+	// PropertyTypeScheme is a URN scheme
+	PropertyTypeScheme PropertyType = "scheme"
+
+	// PropertyTypeField is a custom contact field
+	PropertyTypeField PropertyType = "field"
 )
 
 // QueryNode is the base for nodes in our query parse tree
 type QueryNode interface {
 	fmt.Stringer
-
-	Evaluate(utils.Environment, Queryable) (bool, error)
+	Evaluate(envs.Environment, Queryable) (bool, error)
 }
 
 // Condition represents a comparison between a keywed value on the contact and a provided value
 type Condition struct {
-	key        string
+	propType   PropertyType
+	propKey    string
 	comparator string
 	value      string
+	valueType  assets.FieldType
 }
 
-// Evaluate evaluates this condition against the queryable contact
-func (c *Condition) Evaluate(env utils.Environment, queryable Queryable) (bool, error) {
-	if c.key == ImplicitKey {
-		return false, errors.Errorf("dynamic group queries can't contain implicit conditions")
+func newCondition(propType PropertyType, propKey string, comparator string, value string, valueType assets.FieldType) *Condition {
+	return &Condition{
+		propType:   propType,
+		propKey:    propKey,
+		comparator: comparator,
+		value:      value,
+		valueType:  valueType,
 	}
+}
 
+// PropertyKey returns the key for the property being queried
+func (c *Condition) PropertyKey() string { return c.propKey }
+
+// PropertyType returns the type (attribute, scheme, field)
+func (c *Condition) PropertyType() PropertyType { return c.propType }
+
+// Comparator returns the type of comparison being made
+func (c *Condition) Comparator() string { return c.comparator }
+
+// Value returns the value being compared against
+func (c *Condition) Value() string { return c.value }
+
+// Evaluate evaluates this condition against the queryable contact
+func (c *Condition) Evaluate(env envs.Environment, queryable Queryable) (bool, error) {
 	// contacts can return multiple values per key, e.g. multiple phone numbers in a "tel = x" condition
-	vals := queryable.ResolveQueryKey(env, c.key)
+	vals := queryable.QueryProperty(env, c.PropertyKey(), c.PropertyType())
 
 	// is this an existence check?
 	if c.value == "" {
@@ -72,7 +110,7 @@ func (c *Condition) Evaluate(env utils.Environment, queryable Queryable) (bool, 
 	return false, nil
 }
 
-func (c *Condition) evaluateValue(env utils.Environment, val interface{}) (bool, error) {
+func (c *Condition) evaluateValue(env envs.Environment, val interface{}) (bool, error) {
 	switch val.(type) {
 	case string:
 		return textComparison(val.(string), c.comparator, c.value)
@@ -85,7 +123,7 @@ func (c *Condition) evaluateValue(env utils.Environment, val interface{}) (bool,
 		return numberComparison(val.(decimal.Decimal), c.comparator, asDecimal)
 
 	case time.Time:
-		asDate, err := utils.DateTimeFromString(env, c.value, false)
+		asDate, err := envs.DateTimeFromString(env, c.value, false)
 		if err != nil {
 			return false, err
 		}
@@ -103,26 +141,32 @@ func (c *Condition) String() string {
 	} else {
 		value = c.value
 	}
-	return fmt.Sprintf("%s%s%s", c.key, c.comparator, value)
+	return fmt.Sprintf("%s%s%s", c.propKey, c.comparator, value)
 }
 
 // BoolCombination is a AND or OR combination of multiple conditions
 type BoolCombination struct {
-	op       boolOp
+	op       BoolOperator
 	children []QueryNode
 }
 
+// Operator returns the type of boolean operator this combination is
+func (b *BoolCombination) Operator() BoolOperator { return b.op }
+
+// Children returns the children of this boolean combination
+func (b *BoolCombination) Children() []QueryNode { return b.children }
+
 // NewBoolCombination creates a new boolean combination
-func NewBoolCombination(op boolOp, children ...QueryNode) *BoolCombination {
+func NewBoolCombination(op BoolOperator, children ...QueryNode) *BoolCombination {
 	return &BoolCombination{op: op, children: children}
 }
 
 // Evaluate returns whether this combination evaluates to true or false
-func (b *BoolCombination) Evaluate(env utils.Environment, queryable Queryable) (bool, error) {
+func (b *BoolCombination) Evaluate(env envs.Environment, queryable Queryable) (bool, error) {
 	var childRes bool
 	var err error
 
-	if b.op == boolOpAnd {
+	if b.op == BoolOperatorAnd {
 		for _, child := range b.children {
 			if childRes, err = child.Evaluate(env, queryable); err != nil {
 				return false, err
@@ -147,8 +191,8 @@ func (b *BoolCombination) Evaluate(env utils.Environment, queryable Queryable) (
 
 func (b *BoolCombination) String() string {
 	children := make([]string, len(b.children))
-	for c := range b.children {
-		children[c] = b.children[c].String()
+	for i := range b.children {
+		children[i] = b.children[i].String()
 	}
 	return fmt.Sprintf("%s(%s)", strings.ToUpper(string(b.op)), strings.Join(children, ", "))
 }
@@ -157,7 +201,9 @@ type ContactQuery struct {
 	root QueryNode
 }
 
-func (q *ContactQuery) Evaluate(env utils.Environment, queryable Queryable) (bool, error) {
+func (q *ContactQuery) Root() QueryNode { return q.root }
+
+func (q *ContactQuery) Evaluate(env envs.Environment, queryable Queryable) (bool, error) {
 	return q.root.Evaluate(env, queryable)
 }
 
@@ -166,7 +212,7 @@ func (q *ContactQuery) String() string {
 }
 
 // ParseQuery parses a ContactQL query from the given input
-func ParseQuery(text string) (*ContactQuery, error) {
+func ParseQuery(text string, redaction envs.RedactionPolicy, fieldResolver FieldResolverFunc) (*ContactQuery, error) {
 	errListener := NewErrorListener()
 
 	input := antlr.NewInputStream(text)
@@ -182,8 +228,12 @@ func ParseQuery(text string) (*ContactQuery, error) {
 		return nil, errListener.Error()
 	}
 
-	visitor := NewVisitor()
+	visitor := newVisitor(redaction, fieldResolver)
 	rootNode := visitor.Visit(tree).(QueryNode)
+
+	if len(visitor.errors) > 0 {
+		return nil, visitor.errors[0]
+	}
 
 	return &ContactQuery{root: rootNode}, nil
 }

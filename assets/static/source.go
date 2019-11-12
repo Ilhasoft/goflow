@@ -1,4 +1,4 @@
-// Package static is an implementation of AssetSource which loads assets from a static JSON file.
+// Package static is an implementation of Source which loads assets from a static JSON file.
 package static
 
 import (
@@ -15,13 +15,15 @@ import (
 // StaticSource is an asset source which loads assets from a static JSON file
 type StaticSource struct {
 	s struct {
-		Channels  []*types.Channel           `json:"channels" validate:"omitempty,dive"`
-		Fields    []*types.Field             `json:"fields" validate:"omitempty,dive"`
-		Flows     []*types.Flow              `json:"flows" validate:"omitempty,dive"`
-		Groups    []*types.Group             `json:"groups" validate:"omitempty,dive"`
-		Labels    []*types.Label             `json:"labels" validate:"omitempty,dive"`
-		Locations []*utils.LocationHierarchy `json:"locations"`
-		Resthooks []*types.Resthook          `json:"resthooks" validate:"omitempty,dive"`
+		Channels    []*types.Channel           `json:"channels" validate:"omitempty,dive"`
+		Classifiers []*types.Classifier        `json:"classifiers" validate:"omitempty,dive"`
+		Fields      []*types.Field             `json:"fields" validate:"omitempty,dive"`
+		Flows       []*types.Flow              `json:"flows" validate:"omitempty,dive"`
+		Groups      []*types.Group             `json:"groups" validate:"omitempty,dive"`
+		Labels      []*types.Label             `json:"labels" validate:"omitempty,dive"`
+		Locations   []*utils.LocationHierarchy `json:"locations"`
+		Resthooks   []*types.Resthook          `json:"resthooks" validate:"omitempty,dive"`
+		Templates   []*types.Template          `json:"templates" validate:"omitempty,dive"`
 	}
 }
 
@@ -48,13 +50,22 @@ func LoadSource(path string) (*StaticSource, error) {
 	return NewSource(data)
 }
 
-var _ assets.AssetSource = (*StaticSource)(nil)
+var _ assets.Source = (*StaticSource)(nil)
 
 // Channels returns all channel assets
 func (s *StaticSource) Channels() ([]assets.Channel, error) {
 	set := make([]assets.Channel, len(s.s.Channels))
 	for i := range s.s.Channels {
 		set[i] = s.s.Channels[i]
+	}
+	return set, nil
+}
+
+// Classifiers returns all classifier assets
+func (s *StaticSource) Classifiers() ([]assets.Classifier, error) {
+	set := make([]assets.Classifier, len(s.s.Classifiers))
+	for i := range s.s.Classifiers {
+		set[i] = s.s.Classifiers[i]
 	}
 	return set, nil
 }
@@ -110,6 +121,15 @@ func (s *StaticSource) Resthooks() ([]assets.Resthook, error) {
 	set := make([]assets.Resthook, len(s.s.Resthooks))
 	for i := range s.s.Resthooks {
 		set[i] = s.s.Resthooks[i]
+	}
+	return set, nil
+}
+
+// Templates returns all template assets
+func (s *StaticSource) Templates() ([]assets.Template, error) {
+	set := make([]assets.Template, len(s.s.Templates))
+	for i := range s.s.Templates {
+		set[i] = s.s.Templates[i]
 	}
 	return set, nil
 }

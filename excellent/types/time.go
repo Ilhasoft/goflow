@@ -1,43 +1,68 @@
 package types
 
 import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/utils/dates"
 )
 
-// XTime is a time of day value
+// XTime is a time of day.
+//
+//   @(time_from_parts(16, 30, 45)) -> 16:30:45.000000
+//   @(format_time(time_from_parts(16, 30, 45))) -> 16:30
+//   @(json(time_from_parts(16, 30, 45))) -> "16:30:45.000000"
+//
+// @type time
 type XTime struct {
-	native utils.TimeOfDay
+	native dates.TimeOfDay
 }
 
 // NewXTime creates a new time
-func NewXTime(value utils.TimeOfDay) XTime {
+func NewXTime(value dates.TimeOfDay) XTime {
 	return XTime{native: value}
 }
 
 // Describe returns a representation of this type for error messages
 func (x XTime) Describe() string { return "time" }
 
-// Reduce returns the primitive version of this type (i.e. itself)
-func (x XTime) Reduce(env utils.Environment) XPrimitive { return x }
-
-// ToXText converts this type to text
-func (x XTime) ToXText(env utils.Environment) XText { return NewXText(x.Native().String()) }
-
-// ToXBoolean converts this type to a bool
-func (x XTime) ToXBoolean(env utils.Environment) XBoolean {
-	return NewXBoolean(x != XTimeZero)
+// Truthy determines truthiness for this type
+func (x XTime) Truthy() bool {
+	return x != XTimeZero
 }
 
-// ToXJSON is called when this type is passed to @(json(...))
-func (x XTime) ToXJSON(env utils.Environment) XText {
-	return MustMarshalToXText(x.Native().String())
+// Render returns the canonical text representation
+func (x XTime) Render() string { return x.Native().String() }
+
+// Format returns the pretty text representation
+func (x XTime) Format(env envs.Environment) string {
+	formatted, _ := x.FormatCustom(env.TimeFormat())
+	return formatted
+}
+
+// FormatCustom provides customised formatting
+func (x XTime) FormatCustom(format envs.TimeFormat) (string, error) {
+	goFormat, err := envs.ToGoDateFormat(string(format), envs.TimeOnlyFormatting)
+	if err != nil {
+		return "", err
+	}
+	return x.Native().Format(goFormat), nil
+}
+
+// MarshalJSON is called when a struct containing this type is marshaled
+func (x XTime) MarshalJSON() ([]byte, error) {
+	return json.Marshal(x.Native().String())
+}
+
+// String returns the native string representation of this type
+func (x XTime) String() string {
+	return fmt.Sprintf(`XTime(%d, %d, %d, %d)`, x.native.Hour, x.native.Minute, x.native.Second, x.native.Nanos)
 }
 
 // Native returns the native value of this type
-func (x XTime) Native() utils.TimeOfDay { return x.native }
-
-// String returns the native string representation of this type
-func (x XTime) String() string { return x.ToXText(nil).Native() }
+func (x XTime) Native() dates.TimeOfDay { return x.native }
 
 // Equals determines equality for this type
 func (x XTime) Equals(other XTime) bool {
@@ -50,14 +75,12 @@ func (x XTime) Compare(other XTime) int {
 }
 
 // XTimeZero is the zero time value
-var XTimeZero = NewXTime(utils.ZeroTimeOfDay)
-var _ XPrimitive = XTimeZero
+var XTimeZero = NewXTime(dates.ZeroTimeOfDay)
+var _ XValue = XTimeZero
 
 // ToXTime converts the given value to a time or returns an error if that isn't possible
-func ToXTime(env utils.Environment, x XValue) (XTime, XError) {
+func ToXTime(env envs.Environment, x XValue) (XTime, XError) {
 	if !utils.IsNil(x) {
-		x = x.Reduce(env)
-
 		switch typed := x.(type) {
 		case XError:
 			return XTimeZero, typed
@@ -68,14 +91,18 @@ func ToXTime(env utils.Environment, x XValue) (XTime, XError) {
 		case XNumber:
 			asInt := typed.Native().IntPart()
 			if asInt >= 0 && asInt <= 23 {
-				return NewXTime(utils.NewTimeOfDay(int(asInt), 0, 0, 0)), nil
+				return NewXTime(dates.NewTimeOfDay(int(asInt), 0, 0, 0)), nil
 			} else if asInt == 24 {
 				return XTimeZero, nil
 			}
 		case XText:
-			parsed, err := utils.TimeFromString(typed.Native())
+			parsed, err := envs.TimeFromString(typed.Native())
 			if err == nil {
 				return NewXTime(parsed), nil
+			}
+		case *XObject:
+			if typed.hasDefault() {
+				return ToXTime(env, typed.Default())
 			}
 		}
 	}

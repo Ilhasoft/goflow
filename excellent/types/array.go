@@ -4,87 +4,149 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/utils"
 )
 
-// XArray is an array primitive in Excellent expressions
-type XArray interface {
-	XPrimitive
-	XIndexable
+// XArray is an array of items.
+//
+//   @(array(1, "x", true)) -> [1, x, true]
+//   @(array(1, "x", true)[1]) -> x
+//   @(count(array(1, "x", true))) -> 3
+//   @(json(array(1, "x", true))) -> [1,"x",true]
+//
+// @type array
+type XArray struct {
+	XValue
 
-	Append(XValue)
-}
-
-type xarray struct {
-	values []XValue
+	data   []XValue
+	source func() []XValue
 }
 
 // NewXArray returns a new array with the given items
-func NewXArray(values ...XValue) XArray {
-	if values == nil {
-		values = []XValue{}
+func NewXArray(data ...XValue) *XArray {
+	if data == nil {
+		data = []XValue{}
 	}
-	return &xarray{values: values}
+	return &XArray{data: data}
+}
+
+// NewXLazyArray returns a new lazy array with the given source function
+func NewXLazyArray(source func() []XValue) *XArray {
+	return &XArray{
+		source: source,
+	}
+}
+
+// Get is called when this object is indexed
+func (x *XArray) Get(index int) XValue {
+	return x.values()[index]
+}
+
+// Count is called when the length of this object is requested in an expression
+func (x *XArray) Count() int {
+	return len(x.values())
 }
 
 // Describe returns a representation of this type for error messages
-func (a *xarray) Describe() string { return "array" }
+func (x *XArray) Describe() string { return "array" }
 
-// Reduce returns the primitive version of this type (i.e. itself)
-func (a *xarray) Reduce(env utils.Environment) XPrimitive { return a }
+// Truthy determines truthiness for this type
+func (x *XArray) Truthy() bool {
+	return x.Count() > 0
+}
 
-// ToXText converts this type to text
-func (a *xarray) ToXText(env utils.Environment) XText {
-	parts := make([]string, a.Length())
-	for i, v := range a.values {
-		vAsText, xerr := ToXText(env, v)
-		if xerr != nil {
-			vAsText = xerr.ToXText(env)
-		}
-		parts[i] = vAsText.Native()
+// Render returns the canonical text representation
+func (x *XArray) Render() string {
+	parts := make([]string, x.Count())
+	for i, v := range x.values() {
+		parts[i] = Render(v)
 	}
-	return NewXText(strings.Join(parts, ", "))
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
-// ToXBoolean converts this type to a bool
-func (a *xarray) ToXBoolean(env utils.Environment) XBoolean {
-	return NewXBoolean(len(a.values) > 0)
+// Format returns the pretty text representation
+func (x *XArray) Format(env envs.Environment) string {
+	parts := make([]string, x.Count())
+	multiline := false
+
+	for i, v := range x.values() {
+		parts[i] = Format(env, v)
+		if strings.ContainsRune(parts[i], '\n') {
+			multiline = true
+		}
+	}
+
+	if multiline {
+		for i, p := range parts {
+			p = utils.Indent(p, "  ")
+			parts[i] = "-" + p[1:]
+		}
+
+		return strings.Join(parts, "\n")
+	}
+
+	return strings.Join(parts, ", ")
 }
 
-// ToXJSON is called when this type is passed to @(json(...))
-func (a *xarray) ToXJSON(env utils.Environment) XText {
-	marshaled := make([]json.RawMessage, len(a.values))
-	for i, v := range a.values {
-		asJSON, err := ToXJSON(env, v)
+// MarshalJSON converts this type to internal JSON
+func (x *XArray) MarshalJSON() ([]byte, error) {
+	marshaled := make([]json.RawMessage, x.Count())
+	for i, v := range x.values() {
+		asJSON, err := ToXJSON(v)
 		if err == nil {
 			marshaled[i] = json.RawMessage(asJSON.Native())
 		}
 	}
-	return MustMarshalToXText(marshaled)
-}
-
-// MarshalJSON converts this type to internal JSON
-func (a *xarray) MarshalJSON() ([]byte, error) {
-	return utils.JSONMarshal(a.values)
-}
-
-// Index is called when this object is indexed into in an expression
-func (a *xarray) Index(index int) XValue {
-	return a.values[index]
-}
-
-// Length is called when the length of this object is requested in an expression
-func (a *xarray) Length() int {
-	return len(a.values)
-}
-
-// Append adds the given item to this array
-func (a *xarray) Append(value XValue) {
-	a.values = append(a.values, value)
+	return json.Marshal(marshaled)
 }
 
 // String returns the native string representation of this type
-func (a *xarray) String() string { return a.ToXText(nil).Native() }
+func (x *XArray) String() string {
+	parts := make([]string, x.Count())
+	for i, v := range x.values() {
+		parts[i] = String(v)
+	}
+	return `XArray[` + strings.Join(parts, ", ") + `]`
+}
 
-var _ XArray = (*xarray)(nil)
-var _ json.Marshaler = (*xarray)(nil)
+// Equals determines equality for this type
+func (x *XArray) Equals(other *XArray) bool {
+	if x.Count() != other.Count() {
+		return false
+	}
+
+	for i, v := range x.values() {
+		if !Equals(v, other.values()[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (x *XArray) values() []XValue {
+	if x.data == nil {
+		x.data = x.source()
+	}
+	return x.data
+}
+
+// XArrayEmpty is the empty array
+var XArrayEmpty = NewXArray()
+
+// ToXArray converts the given value to an array
+func ToXArray(env envs.Environment, x XValue) (*XArray, XError) {
+	if utils.IsNil(x) {
+		return XArrayEmpty, nil
+	}
+	if IsXError(x) {
+		return XArrayEmpty, x.(XError)
+	}
+
+	asArray, isArray := x.(*XArray)
+	if isArray {
+		return asArray, nil
+	}
+
+	return XArrayEmpty, NewXErrorf("unable to convert %s to an array", Describe(x))
+}

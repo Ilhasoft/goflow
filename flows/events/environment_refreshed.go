@@ -3,12 +3,12 @@ package events
 import (
 	"encoding/json"
 
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
-	"github.com/nyaruka/goflow/utils"
 )
 
 func init() {
-	RegisterType(TypeEnvironmentRefreshed, func() flows.Event { return &EnvironmentRefreshedEvent{} })
+	registerType(TypeEnvironmentRefreshed, func() flows.Event { return &EnvironmentRefreshedEvent{} })
 }
 
 // TypeEnvironmentRefreshed is the type of our environment changed event
@@ -30,16 +30,16 @@ const TypeEnvironmentRefreshed string = "environment_refreshed"
 //
 // @event environment_refreshed
 type EnvironmentRefreshedEvent struct {
-	BaseEvent
+	baseEvent
 
 	Environment json.RawMessage `json:"environment"`
 }
 
-// NewEnvironmentRefreshedEvent creates a new environment changed event
-func NewEnvironmentRefreshedEvent(env utils.Environment) *EnvironmentRefreshedEvent {
+// NewEnvironmentRefreshed creates a new environment changed event
+func NewEnvironmentRefreshed(env envs.Environment) *EnvironmentRefreshedEvent {
 	marshalled, _ := json.Marshal(env)
 	return &EnvironmentRefreshedEvent{
-		BaseEvent:   NewBaseEvent(TypeEnvironmentRefreshed),
+		baseEvent:   newBaseEvent(TypeEnvironmentRefreshed),
 		Environment: marshalled,
 	}
 }

@@ -5,31 +5,18 @@ import (
 
 	"github.com/nyaruka/goflow/assets"
 	"github.com/nyaruka/goflow/contactql"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent/types"
-	"github.com/nyaruka/goflow/utils"
 
 	"github.com/pkg/errors"
 )
 
 // Group represents a grouping of contacts. It can be static (contacts are added and removed manually through
-// [actions](#action:add_contact_groups)) or dynamic (contacts are added automatically by a query). It renders as its name in a
-// template, and has the following properties which can be accessed:
-//
-//  * `uuid` the UUID of the group
-//  * `name` the name of the group
-//
-// Examples:
-//
-//   @contact.groups -> Testers, Males
-//   @(contact.groups[0].uuid) -> b7cf0d83-f1c9-411c-96fd-c511a4cfa86d
-//   @(contact.groups[1].name) -> Males
-//   @(json(contact.groups[1])) -> {"name":"Males","uuid":"4f1f98fc-27a7-4a69-bbdb-24744ba739a9"}
-//
-// @context group
+// [actions](#action:add_contact_groups)) or dynamic (contacts are added automatically by a query).
 type Group struct {
 	assets.Group
 
-	parsedQuery *contactql.ContactQuery
+	cachedQuery *contactql.ContactQuery
 }
 
 // NewGroup returns a new group object from the given group asset
@@ -40,26 +27,30 @@ func NewGroup(asset assets.Group) *Group {
 // Asset returns the underlying asset
 func (g *Group) Asset() assets.Group { return g.Group }
 
-// ParsedQuery returns the parsed query of a dynamic group (cached)
-func (g *Group) ParsedQuery() (*contactql.ContactQuery, error) {
-	if g.Query() != "" && g.parsedQuery == nil {
+// the parsed query of a dynamic group (cached)
+func (g *Group) parsedQuery(env envs.Environment, fields *FieldAssets) (*contactql.ContactQuery, error) {
+	if g.Query() != "" && g.cachedQuery == nil {
+		fieldResolver := func(key string) assets.Field {
+			return fields.Get(key)
+		}
+
 		var err error
-		if g.parsedQuery, err = contactql.ParseQuery(g.Query()); err != nil {
+		if g.cachedQuery, err = contactql.ParseQuery(g.Query(), env.RedactionPolicy(), fieldResolver); err != nil {
 			return nil, err
 		}
 	}
-	return g.parsedQuery, nil
+	return g.cachedQuery, nil
 }
 
 // IsDynamic returns whether this group is dynamic
 func (g *Group) IsDynamic() bool { return g.Query() != "" }
 
 // CheckDynamicMembership returns whether the given contact belongs in this dynamic group
-func (g *Group) CheckDynamicMembership(env utils.Environment, contact *Contact) (bool, error) {
+func (g *Group) CheckDynamicMembership(env envs.Environment, contact *Contact, fields *FieldAssets) (bool, error) {
 	if !g.IsDynamic() {
 		return false, errors.Errorf("can't check membership on a non-dynamic group")
 	}
-	parsedQuery, err := g.ParsedQuery()
+	parsedQuery, err := g.parsedQuery(env, fields)
 	if err != nil {
 		return false, err
 	}
@@ -75,31 +66,18 @@ func (g *Group) Reference() *assets.GroupReference {
 	return assets.NewGroupReference(g.UUID(), g.Name())
 }
 
-// Resolve resolves the given key when this group is referenced in an expression
-func (g *Group) Resolve(env utils.Environment, key string) types.XValue {
-	switch strings.ToLower(key) {
-	case "uuid":
-		return types.NewXText(string(g.UUID()))
-	case "name":
-		return types.NewXText(g.Name())
-	}
-
-	return types.NewXResolveError(g, key)
+// ToXValue returns a representation of this object for use in expressions
+//
+//   uuid:text -> the UUID of the group
+//   name:text -> the name of the group
+//
+// @context group
+func (g *Group) ToXValue(env envs.Environment) types.XValue {
+	return types.NewXObject(map[string]types.XValue{
+		"uuid": types.NewXText(string(g.UUID())),
+		"name": types.NewXText(g.Name()),
+	})
 }
-
-// Describe returns a representation of this type for error messages
-func (g *Group) Describe() string { return "group" }
-
-// Reduce is called when this object needs to be reduced to a primitive
-func (g *Group) Reduce(env utils.Environment) types.XPrimitive { return types.NewXText(g.Name()) }
-
-// ToXJSON is called when this type is passed to @(json(...))
-func (g *Group) ToXJSON(env utils.Environment) types.XText {
-	return types.ResolveKeys(env, g, "uuid", "name").ToXJSON(env)
-}
-
-var _ types.XValue = (*Group)(nil)
-var _ types.XResolvable = (*Group)(nil)
 
 // GroupList defines a contact's list of groups
 type GroupList struct {
@@ -115,12 +93,12 @@ func NewGroupList(groups []*Group) *GroupList {
 func NewGroupListFromAssets(a SessionAssets, groupAssets []assets.Group) (*GroupList, error) {
 	groups := make([]*Group, len(groupAssets))
 
-	for g, asset := range groupAssets {
+	for i, asset := range groupAssets {
 		group := a.Groups().Get(asset.UUID())
 		if group == nil {
 			return nil, errors.Errorf("no such group: %s", asset.UUID())
 		}
-		groups[g] = group
+		groups[i] = group
 	}
 	return &GroupList{groups: groups}, nil
 }
@@ -153,9 +131,9 @@ func (l *GroupList) Add(group *Group) bool {
 
 // Remove removes the given group from this group list
 func (l *GroupList) Remove(group *Group) bool {
-	for g := range l.groups {
-		if l.groups[g].UUID() == group.UUID() {
-			l.groups = append(l.groups[:g], l.groups[g+1:]...)
+	for i := range l.groups {
+		if l.groups[i].UUID() == group.UUID() {
+			l.groups = append(l.groups[:i], l.groups[i+1:]...)
 			return true
 		}
 	}
@@ -172,35 +150,14 @@ func (l *GroupList) Count() int {
 	return len(l.groups)
 }
 
-// Index is called when this object is indexed into in an expression
-func (l *GroupList) Index(index int) types.XValue {
-	return l.groups[index]
-}
-
-// Length is called when the length of this object is requested in an expression
-func (l *GroupList) Length() int {
-	return len(l.groups)
-}
-
-// Describe returns a representation of this type for error messages
-func (l GroupList) Describe() string { return "groups" }
-
-// Reduce is called when this object needs to be reduced to a primitive
-func (l GroupList) Reduce(env utils.Environment) types.XPrimitive {
-	array := types.NewXArray()
-	for _, group := range l.groups {
-		array.Append(group)
+// ToXValue returns a representation of this object for use in expressions
+func (l GroupList) ToXValue(env envs.Environment) types.XValue {
+	array := make([]types.XValue, len(l.groups))
+	for i, group := range l.groups {
+		array[i] = group.ToXValue(env)
 	}
-	return array
+	return types.NewXArray(array...)
 }
-
-// ToXJSON is called when this type is passed to @(json(...))
-func (l GroupList) ToXJSON(env utils.Environment) types.XText {
-	return l.Reduce(env).ToXJSON(env)
-}
-
-var _ types.XValue = (*GroupList)(nil)
-var _ types.XIndexable = (*GroupList)(nil)
 
 // GroupAssets provides access to all group assets
 type GroupAssets struct {
@@ -214,9 +171,9 @@ func NewGroupAssets(groups []assets.Group) *GroupAssets {
 		all:    make([]*Group, len(groups)),
 		byUUID: make(map[assets.GroupUUID]*Group, len(groups)),
 	}
-	for g, asset := range groups {
+	for i, asset := range groups {
 		group := NewGroup(asset)
-		s.all[g] = group
+		s.all[i] = group
 		s.byUUID[group.UUID()] = group
 	}
 	return s

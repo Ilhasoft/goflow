@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/events"
 	"github.com/nyaruka/goflow/utils"
 )
 
 func init() {
-	RegisterType(TypeLanguage, readLanguageModifier)
+	registerType(TypeLanguage, readLanguageModifier)
 }
 
 // TypeLanguage is the type of our language modifier
@@ -20,11 +21,11 @@ const TypeLanguage string = "language"
 type LanguageModifier struct {
 	baseModifier
 
-	Language utils.Language `json:"language"`
+	Language envs.Language `json:"language"`
 }
 
-// NewLanguageModifier creates a new language modifier
-func NewLanguageModifier(language utils.Language) *LanguageModifier {
+// NewLanguage creates a new language modifier
+func NewLanguage(language envs.Language) *LanguageModifier {
 	return &LanguageModifier{
 		baseModifier: newBaseModifier(TypeLanguage),
 		Language:     language,
@@ -32,10 +33,10 @@ func NewLanguageModifier(language utils.Language) *LanguageModifier {
 }
 
 // Apply applies this modification to the given contact
-func (m *LanguageModifier) Apply(env utils.Environment, assets flows.SessionAssets, contact *flows.Contact, log flows.EventCallback) {
+func (m *LanguageModifier) Apply(env envs.Environment, assets flows.SessionAssets, contact *flows.Contact, log flows.EventCallback) {
 	if contact.Language() != m.Language {
 		contact.SetLanguage(m.Language)
-		log(events.NewContactLanguageChangedEvent(m.Language))
+		log(events.NewContactLanguageChanged(m.Language))
 		m.reevaluateDynamicGroups(env, assets, contact, log)
 	}
 }

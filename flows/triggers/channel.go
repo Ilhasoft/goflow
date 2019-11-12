@@ -5,13 +5,14 @@ import (
 
 	"github.com/nyaruka/gocommon/urns"
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent/types"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/utils"
 )
 
 func init() {
-	RegisterType(TypeChannel, readChannelTrigger)
+	registerType(TypeChannel, readChannelTrigger)
 }
 
 // TypeChannel is the type for sessions triggered by channel events
@@ -60,28 +61,27 @@ type ChannelTrigger struct {
 	event *ChannelEvent
 }
 
-// NewChannelTrigger creates a new channel trigger with the passed in values
-func NewChannelTrigger(env utils.Environment, flow *assets.FlowReference, contact *flows.Contact, event *ChannelEvent, params types.XValue) *ChannelTrigger {
+// NewChannel creates a new channel trigger with the passed in values
+func NewChannel(env envs.Environment, flow *assets.FlowReference, contact *flows.Contact, event *ChannelEvent, params *types.XObject) *ChannelTrigger {
+	if params == nil {
+		params = types.XObjectEmpty
+	}
+
 	return &ChannelTrigger{
 		baseTrigger: newBaseTrigger(TypeChannel, env, flow, contact, nil, params),
 		event:       event,
 	}
 }
 
-// NewIncomingCallTrigger creates a new channel trigger with the passed in values
-func NewIncomingCallTrigger(env utils.Environment, flow *assets.FlowReference, contact *flows.Contact, urn urns.URN, channel *assets.ChannelReference) *ChannelTrigger {
+// NewIncomingCall creates a new channel trigger with the passed in values
+func NewIncomingCall(env envs.Environment, flow *assets.FlowReference, contact *flows.Contact, urn urns.URN, channel *assets.ChannelReference) *ChannelTrigger {
 	event := NewChannelEvent(ChannelEventTypeIncomingCall, channel)
 	connection := flows.NewConnection(channel, urn)
 
 	return &ChannelTrigger{
-		baseTrigger: newBaseTrigger(TypeChannel, env, flow, contact, connection, nil),
+		baseTrigger: newBaseTrigger(TypeChannel, env, flow, contact, connection, types.XObjectEmpty),
 		event:       event,
 	}
-}
-
-// ToXJSON is called when this type is passed to @(json(...))
-func (t *ChannelTrigger) ToXJSON(env utils.Environment) types.XText {
-	return types.ResolveKeys(env, t, "type", "params").ToXJSON(env)
 }
 
 var _ flows.Trigger = (*ChannelTrigger)(nil)

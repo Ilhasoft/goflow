@@ -2,7 +2,9 @@ package types
 
 import (
 	"math"
+	"strings"
 
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/utils"
 
 	"github.com/shopspring/decimal"
@@ -12,7 +14,14 @@ func init() {
 	decimal.MarshalJSONWithoutQuotes = true
 }
 
-// XNumber is any whole or fractional number
+// XNumber is a whole or fractional number.
+//
+//   @(1234) -> 1234
+//   @(1234.5678) -> 1234.5678
+//   @(format_number(1234.5670)) -> 1,234.567
+//   @(json(1234.5678)) -> 1234.5678
+//
+// @type number
 type XNumber struct {
 	native decimal.Decimal
 }
@@ -38,27 +47,55 @@ func RequireXNumberFromString(value string) XNumber {
 }
 
 // Describe returns a representation of this type for error messages
-func (x XNumber) Describe() string { return x.ToXText(nil).Native() }
+func (x XNumber) Describe() string { return x.Render() }
 
-// Reduce returns the primitive version of this type (i.e. itself)
-func (x XNumber) Reduce(env utils.Environment) XPrimitive { return x }
-
-// ToXText converts this type to text
-func (x XNumber) ToXText(env utils.Environment) XText { return NewXText(x.Native().String()) }
-
-// ToXBoolean converts this type to a bool
-func (x XNumber) ToXBoolean(env utils.Environment) XBoolean {
-	return NewXBoolean(!x.Equals(XNumberZero))
+// Truthy determines truthiness for this type
+func (x XNumber) Truthy() bool {
+	return !x.Equals(XNumberZero)
 }
 
-// ToXJSON is called when this type is passed to @(json(...))
-func (x XNumber) ToXJSON(env utils.Environment) XText { return MustMarshalToXText(x.Native()) }
+// Render returns the canonical text representation
+func (x XNumber) Render() string { return x.Native().String() }
+
+// Format returns the pretty text representation
+func (x XNumber) Format(env envs.Environment) string {
+	return x.FormatCustom(env.NumberFormat(), -1, true)
+}
+
+// FormatCustom provides customised formatting
+func (x XNumber) FormatCustom(format *envs.NumberFormat, places int, groupDigits bool) string {
+	var formatted string
+
+	if places >= 0 {
+		formatted = x.Native().StringFixed(int32(places))
+	} else {
+		formatted = x.Native().String()
+	}
+
+	parts := strings.Split(formatted, ".")
+
+	// add thousands separators
+	if groupDigits {
+		sb := strings.Builder{}
+		for i, r := range parts[0] {
+			sb.WriteRune(r)
+
+			d := (len(parts[0]) - 1) - i
+			if d%3 == 0 && d > 0 {
+				sb.WriteString(format.DigitGroupingSymbol)
+			}
+		}
+		parts[0] = sb.String()
+	}
+
+	return strings.Join(parts, format.DecimalSymbol)
+}
+
+// String returns the native string representation of this type
+func (x XNumber) String() string { return `XNumber(` + x.Render() + `)` }
 
 // Native returns the native value of this type
 func (x XNumber) Native() decimal.Decimal { return x.native }
-
-// String returns the native string representation of this type
-func (x XNumber) String() string { return x.ToXText(nil).Native() }
 
 // Equals determines equality for this type
 func (x XNumber) Equals(other XNumber) bool {
@@ -83,13 +120,11 @@ func (x *XNumber) UnmarshalJSON(data []byte) error {
 
 // XNumberZero is the zero number value
 var XNumberZero = NewXNumber(decimal.Zero)
-var _ XPrimitive = XNumberZero
+var _ XValue = XNumberZero
 
 // ToXNumber converts the given value to a number or returns an error if that isn't possible
-func ToXNumber(env utils.Environment, x XValue) (XNumber, XError) {
+func ToXNumber(env envs.Environment, x XValue) (XNumber, XError) {
 	if !utils.IsNil(x) {
-		x = x.Reduce(env)
-
 		switch typed := x.(type) {
 		case XError:
 			return XNumberZero, typed
@@ -100,6 +135,10 @@ func ToXNumber(env utils.Environment, x XValue) (XNumber, XError) {
 			if err == nil {
 				return NewXNumber(parsed), nil
 			}
+		case *XObject:
+			if typed.hasDefault() {
+				return ToXNumber(env, typed.Default())
+			}
 		}
 	}
 
@@ -107,7 +146,7 @@ func ToXNumber(env utils.Environment, x XValue) (XNumber, XError) {
 }
 
 // ToInteger tries to convert the passed in value to an integer or returns an error if that isn't possible
-func ToInteger(env utils.Environment, x XValue) (int, XError) {
+func ToInteger(env envs.Environment, x XValue) (int, XError) {
 	number, err := ToXNumber(env, x)
 	if err != nil {
 		return 0, err
@@ -116,7 +155,7 @@ func ToInteger(env utils.Environment, x XValue) (int, XError) {
 	intPart := number.Native().IntPart()
 
 	if intPart < math.MinInt32 || intPart > math.MaxInt32 {
-		return 0, NewXErrorf("number value %s is out of range for an integer", number.ToXText(env).Native())
+		return 0, NewXErrorf("number value %s is out of range for an integer", number.Render())
 	}
 
 	return int(intPart), nil

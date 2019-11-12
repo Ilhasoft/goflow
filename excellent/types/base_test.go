@@ -4,310 +4,287 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent/types"
 	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/utils/dates"
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type testXObject struct {
-	foo string
-	bar int
-}
-
-func NewTestXObject(foo string, bar int) *testXObject {
-	return &testXObject{foo: foo, bar: bar}
-}
-
-func (v *testXObject) Resolve(env utils.Environment, key string) types.XValue {
-	switch key {
-	case "foo":
-		return types.NewXText(v.foo)
-	case "bar":
-		return types.NewXNumberFromInt(v.bar)
-	}
-	return types.NewXResolveError(v, key)
-}
-
-// ToXJSON is called when this type is passed to @(json(...))
-func (v *testXObject) ToXJSON(env utils.Environment) types.XText {
-	return types.ResolveKeys(env, v, "foo", "bar").ToXJSON(env)
-}
-
-// MarshalJSON converts this type to its internal JSON representation which can differ from ToJSON
-func (v *testXObject) MarshalJSON() ([]byte, error) {
-	e := struct {
-		Foo string `json:"foo"`
-	}{
-		Foo: v.foo,
-	}
-	return utils.JSONMarshal(e)
-}
-
-// Describe returns a representation of this type for error messages
-func (v *testXObject) Describe() string { return "test" }
-
-func (v *testXObject) Reduce(env utils.Environment) types.XPrimitive { return types.NewXText(v.foo) }
-
-var _ types.XValue = &testXObject{}
-var _ types.XResolvable = &testXObject{}
-
-func TestXValueRequiredConversions(t *testing.T) {
+func TestXValue(t *testing.T) {
 	chi, err := time.LoadLocation("America/Chicago")
 	require.NoError(t, err)
 
 	date1 := time.Date(2017, 6, 23, 15, 30, 0, 0, time.UTC)
 	date2 := time.Date(2017, 7, 18, 15, 30, 0, 0, chi)
+	object1 := types.NewXObject(map[string]types.XValue{
+		"foo": types.NewXText("Hello"),
+		"bar": types.NewXNumberFromInt(123),
+	})
+	object2 := types.NewXObject(map[string]types.XValue{
+		"foo": types.NewXText("World"),
+		"bar": types.NewXNumberFromInt(456),
+	})
 
-	env := utils.NewEnvironmentBuilder().Build()
+	env := envs.NewBuilder().WithDateFormat(envs.DateFormatDayMonthYear).Build()
 
 	tests := []struct {
-		value          types.XValue
-		asJSON         string
-		asInternalJSON string
-		asText         string
-		asBool         bool
-		isEmpty        bool
+		value     types.XValue
+		marshaled string
+		rendered  string
+		formatted string
+		asBool    bool
+		isEmpty   bool
 	}{
 		{
-			value:          nil,
-			asInternalJSON: `null`,
-			asJSON:         `null`,
-			asText:         "",
-			asBool:         false,
-			isEmpty:        true,
+			value:     nil,
+			marshaled: `null`,
+			rendered:  "",
+			formatted: "",
+			asBool:    false,
+			isEmpty:   true,
 		}, {
-			value:          types.NewXText(""),
-			asInternalJSON: `""`,
-			asJSON:         `""`,
-			asText:         "",
-			asBool:         false, // empty strings are false
-			isEmpty:        true,
+			value:     types.NewXText(""),
+			marshaled: `""`,
+			rendered:  "",
+			formatted: "",
+			asBool:    false, // empty strings are false
+			isEmpty:   true,
 		}, {
-			value:          types.NewXText("FALSE"),
-			asInternalJSON: `"FALSE"`,
-			asJSON:         `"FALSE"`,
-			asText:         "FALSE",
-			asBool:         false, // because it's string value is "false"
-			isEmpty:        false,
+			value:     types.NewXText("FALSE"),
+			marshaled: `"FALSE"`,
+			rendered:  "FALSE",
+			formatted: "FALSE",
+			asBool:    false, // because it's string value is "false"
+			isEmpty:   false,
 		}, {
-			value:          types.NewXText("hello \"bob\""),
-			asInternalJSON: `"hello \"bob\""`,
-			asJSON:         `"hello \"bob\""`,
-			asText:         "hello \"bob\"",
-			asBool:         true,
-			isEmpty:        false,
+			value:     types.NewXText("hello \"bob\""),
+			marshaled: `"hello \"bob\""`,
+			rendered:  "hello \"bob\"",
+			formatted: "hello \"bob\"",
+			asBool:    true,
+			isEmpty:   false,
 		}, {
-			value:          types.NewXNumberFromInt(0),
-			asInternalJSON: `0`,
-			asJSON:         `0`,
-			asText:         "0",
-			asBool:         false, // because any decimal != 0 is true
-			isEmpty:        false,
+			value:     types.NewXNumberFromInt(0),
+			marshaled: `0`,
+			rendered:  "0",
+			formatted: "0",
+			asBool:    false, // because any decimal != 0 is true
+			isEmpty:   false,
 		}, {
-			value:          types.NewXNumberFromInt(123),
-			asInternalJSON: `123`,
-			asJSON:         `123`,
-			asText:         "123",
-			asBool:         true, // because any decimal != 0 is true
-			isEmpty:        false,
+			value:     types.NewXNumberFromInt(1234),
+			marshaled: `1234`,
+			rendered:  "1234",
+			formatted: "1,234",
+			asBool:    true, // because any decimal != 0 is true
+			isEmpty:   false,
 		}, {
-			value:          types.RequireXNumberFromString("123.00"),
-			asInternalJSON: `123`,
-			asJSON:         `123`,
-			asText:         "123",
-			asBool:         true,
-			isEmpty:        false,
+			value:     types.RequireXNumberFromString("123.00"),
+			marshaled: `123`,
+			rendered:  "123",
+			formatted: "123",
+			asBool:    true,
+			isEmpty:   false,
 		}, {
-			value:          types.RequireXNumberFromString("123.45"),
-			asInternalJSON: `123.45`,
-			asJSON:         `123.45`,
-			asText:         "123.45",
-			asBool:         true,
-			isEmpty:        false,
+			value:     types.RequireXNumberFromString("1234.5678"),
+			marshaled: `1234.5678`,
+			rendered:  "1234.5678",
+			formatted: "1,234.5678",
+			asBool:    true,
+			isEmpty:   false,
 		}, {
-			value:          types.NewXBoolean(false),
-			asInternalJSON: `false`,
-			asJSON:         `false`,
-			asText:         "false",
-			asBool:         false,
-			isEmpty:        false,
+			value:     types.NewXBoolean(false),
+			marshaled: `false`,
+			rendered:  "false",
+			formatted: "false",
+			asBool:    false,
+			isEmpty:   false,
 		}, {
-			value:          types.NewXBoolean(true),
-			asInternalJSON: `true`,
-			asJSON:         `true`,
-			asText:         "true",
-			asBool:         true,
-			isEmpty:        false,
+			value:     types.NewXBoolean(true),
+			marshaled: `true`,
+			rendered:  "true",
+			formatted: "true",
+			asBool:    true,
+			isEmpty:   false,
 		}, {
-			value:          types.NewXDateTime(date1),
-			asInternalJSON: `"2017-06-23T15:30:00Z"`,
-			asJSON:         `"2017-06-23T15:30:00.000000Z"`,
-			asText:         "2017-06-23T15:30:00.000000Z",
-			asBool:         true,
-			isEmpty:        false,
+			value:     types.NewXDateTime(date1),
+			marshaled: `"2017-06-23T15:30:00.000000Z"`,
+			rendered:  "2017-06-23T15:30:00.000000Z",
+			formatted: "23-06-2017 15:30",
+			asBool:    true,
+			isEmpty:   false,
 		}, {
-			value:          types.NewXDateTime(date2),
-			asInternalJSON: `"2017-07-18T15:30:00-05:00"`,
-			asJSON:         `"2017-07-18T15:30:00.000000-05:00"`,
-			asText:         "2017-07-18T15:30:00.000000-05:00",
-			asBool:         true,
-			isEmpty:        false,
+			value:     types.NewXDateTime(date2),
+			marshaled: `"2017-07-18T15:30:00.000000-05:00"`,
+			rendered:  "2017-07-18T15:30:00.000000-05:00",
+			formatted: "18-07-2017 20:30",
+			asBool:    true,
+			isEmpty:   false,
 		}, {
-			value:          types.NewXArray(),
-			asInternalJSON: `[]`,
-			asJSON:         `[]`,
-			asText:         ``,
-			asBool:         false,
-			isEmpty:        true,
+			value:     types.NewXArray(),
+			marshaled: `[]`,
+			rendered:  `[]`,
+			formatted: "",
+			asBool:    false,
+			isEmpty:   true,
 		}, {
-			value:          types.NewXArray(types.NewXNumberFromInt(1), types.NewXNumberFromInt(2)),
-			asInternalJSON: `[1,2]`,
-			asJSON:         `[1,2]`,
-			asText:         `1, 2`,
-			asBool:         true,
-			isEmpty:        false,
+			value:     types.NewXArray(types.NewXNumberFromInt(1), types.NewXNumberFromInt(2)),
+			marshaled: `[1,2]`,
+			rendered:  `[1, 2]`,
+			formatted: "1, 2",
+			asBool:    true,
+			isEmpty:   false,
 		}, {
-			value:          types.NewXArray(types.NewXDateTime(date1), types.NewXDateTime(date2)),
-			asInternalJSON: `["2017-06-23T15:30:00Z","2017-07-18T15:30:00-05:00"]`,
-			asJSON:         `["2017-06-23T15:30:00.000000Z","2017-07-18T15:30:00.000000-05:00"]`,
-			asText:         `2017-06-23T15:30:00.000000Z, 2017-07-18T15:30:00.000000-05:00`,
-			asBool:         true,
-			isEmpty:        false,
+			value:     types.NewXArray(types.NewXDateTime(date1), types.NewXDateTime(date2)),
+			marshaled: `["2017-06-23T15:30:00.000000Z","2017-07-18T15:30:00.000000-05:00"]`,
+			rendered:  `[2017-06-23T15:30:00.000000Z, 2017-07-18T15:30:00.000000-05:00]`,
+			formatted: "23-06-2017 15:30, 18-07-2017 20:30",
+			asBool:    true,
+			isEmpty:   false,
 		}, {
-			value:          NewTestXObject("Hello", 123),
-			asInternalJSON: `{"foo":"Hello"}`,
-			asJSON:         `{"bar":123,"foo":"Hello"}`,
-			asText:         "Hello",
-			asBool:         true,
-			isEmpty:        false,
+			value:     types.NewXArray(object1, object2),
+			marshaled: `[{"bar":123,"foo":"Hello"},{"bar":456,"foo":"World"}]`,
+			rendered:  `[{bar: 123, foo: Hello}, {bar: 456, foo: World}]`,
+			formatted: "- bar: 123\n  foo: Hello\n- bar: 456\n  foo: World",
+			asBool:    true,
+			isEmpty:   false,
 		}, {
-			value:          NewTestXObject("", 123),
-			asInternalJSON: `{"foo":""}`,
-			asJSON:         `{"bar":123,"foo":""}`,
-			asText:         "",
-			asBool:         false, // because it reduces to a string which itself is false
-			isEmpty:        false,
+			value:     types.XObjectEmpty,
+			marshaled: `{}`,
+			rendered:  `{}`,
+			formatted: "",
+			asBool:    false,
+			isEmpty:   true,
 		}, {
-			value:          types.NewXArray(NewTestXObject("Hello", 123), NewTestXObject("World", 456)),
-			asInternalJSON: `[{"foo":"Hello"},{"foo":"World"}]`,
-			asJSON:         `[{"bar":123,"foo":"Hello"},{"bar":456,"foo":"World"}]`,
-			asText:         `Hello, World`,
-			asBool:         true,
-			isEmpty:        false,
+			value:     types.NewXObject(map[string]types.XValue{"first": object1, "second": object2}),
+			marshaled: `{"first":{"bar":123,"foo":"Hello"},"second":{"bar":456,"foo":"World"}}`,
+			rendered:  `{first: {bar: 123, foo: Hello}, second: {bar: 456, foo: World}}`,
+			formatted: "first:\n  bar: 123\n  foo: Hello\nsecond:\n  bar: 456\n  foo: World",
+			asBool:    true,
+			isEmpty:   false,
 		}, {
-			value:          types.NewEmptyXMap(),
-			asInternalJSON: `{}`,
-			asJSON:         `{}`,
-			asText:         ``,
-			asBool:         false,
-			isEmpty:        true,
+			value:     types.NewXObject(map[string]types.XValue{"__default__": types.NewXNumberFromInt(1), "foo": object1}),
+			marshaled: `{"foo":{"bar":123,"foo":"Hello"}}`,
+			rendered:  `1`,
+			formatted: "1",
+			asBool:    true,
+			isEmpty:   false,
 		}, {
-			value: types.NewXMap(map[string]types.XValue{
-				"first":  NewTestXObject("Hello", 123),
-				"second": NewTestXObject("World", 456),
-			}),
-			asInternalJSON: `{"first":{"foo":"Hello"},"second":{"foo":"World"}}`,
-			asJSON:         `{"first":{"bar":123,"foo":"Hello"},"second":{"bar":456,"foo":"World"}}`,
-			asText:         "first: Hello\nsecond: World",
-			asBool:         true,
-			isEmpty:        false,
-		}, {
-			value:          types.NewXJSONArray([]byte(`[]`)),
-			asInternalJSON: `[]`,
-			asJSON:         `[]`,
-			asText:         `[]`,
-			asBool:         false,
-			isEmpty:        false,
-		}, {
-			value:          types.NewXJSONArray([]byte(`[5,     "x"]`)),
-			asInternalJSON: `[5,"x"]`,
-			asJSON:         `[5,     "x"]`,
-			asText:         `[5,     "x"]`,
-			asBool:         true,
-			isEmpty:        false,
-		}, {
-			value:          types.NewXJSONObject([]byte(`{}`)),
-			asInternalJSON: `{}`,
-			asJSON:         `{}`,
-			asText:         `{}`,
-			asBool:         false,
-			isEmpty:        false,
-		}, {
-			value:          types.NewXJSONObject([]byte(`{"foo":"World","bar":456}`)),
-			asInternalJSON: `{"foo":"World","bar":456}`,
-			asJSON:         `{"foo":"World","bar":456}`,
-			asText:         `{"foo":"World","bar":456}`,
-			asBool:         true,
-			isEmpty:        false,
-		}, {
-			value:          types.NewXError(errors.Errorf("it failed")), // once an error, always an error
-			asInternalJSON: "",
-			asJSON:         "",
-			asText:         "",
-			asBool:         false,
-			isEmpty:        false,
+			value:     types.NewXError(errors.Errorf("it failed")), // once an error, always an error
+			marshaled: `null`,
+			rendered:  "",
+			formatted: "",
+			asBool:    false,
+			isEmpty:   false,
 		},
 	}
 	for _, test := range tests {
-		asInternalJSON, _ := utils.JSONMarshal(test.value)
-		asJSON, _ := types.ToXJSON(env, test.value)
-		asText, _ := types.ToXText(env, test.value)
-		asBool, _ := types.ToXBoolean(env, test.value)
+		marshaled, _ := utils.JSONMarshal(test.value)
+		rendered, _ := types.ToXText(env, test.value)
+		formatted := types.Format(env, test.value)
+		asBool, _ := types.ToXBoolean(test.value)
 
-		assert.Equal(t, test.asInternalJSON, string(asInternalJSON), "json.Marshal failed for %T{%s}", test.value, test.value)
-		assert.Equal(t, types.NewXText(test.asJSON), asJSON, "ToXJSON failed for %T{%s}", test.value, test.value)
-		assert.Equal(t, types.NewXText(test.asText), asText, "ToXText failed for %T{%s}", test.value, test.value)
-		assert.Equal(t, types.NewXBoolean(test.asBool), asBool, "ToXBool failed for %T{%s}", test.value, test.value)
+		assert.Equal(t, test.marshaled, string(marshaled), "json.Marshal mismatch for %T{%s}", test.value, test.value)
+		assert.Equal(t, types.NewXText(test.rendered), rendered, "ToXText mismatch for %T{%s}", test.value, test.value)
+		assert.Equal(t, test.formatted, formatted, "Format mismatch for %T{%s}", test.value, test.value)
+		assert.Equal(t, types.NewXBoolean(test.asBool), asBool, "ToXBool mismatch for %T{%s}", test.value, test.value)
+
+		if types.IsXError(test.value) {
+			_, xerr := types.ToXJSON(test.value)
+			assert.Error(t, xerr)
+		} else {
+			marshaled, _ := types.ToXJSON(test.value)
+			assert.Equal(t, types.NewXText(test.marshaled), marshaled, "ToXJSON mismatch for %T{%s}", test.value, test.value)
+		}
 	}
 }
 
 func TestEquals(t *testing.T) {
-	env := utils.NewEnvironmentBuilder().Build()
-
 	var tests = []struct {
 		x1     types.XValue
 		x2     types.XValue
 		result bool
 	}{
-		{nil, nil, true},
-		{nil, types.NewXText(""), false},
-		{types.NewXError(errors.Errorf("Error")), types.NewXError(errors.Errorf("Error")), true},
-		{types.NewXError(errors.Errorf("Error")), types.XDateTimeZero, false},
-		{types.NewXText("bob"), types.NewXText("bob"), true},
-		{types.NewXText("bob"), types.NewXText("abc"), false},
+
+		{nil, nil, true},                                         // nil == nil
+		{nil, types.NewXText(""), false},                         // nil != non-nil
+		{types.NewXText("1"), types.NewXNumberFromInt(1), false}, // different types are never equal
+
+		{types.NewXArray(types.XBooleanFalse, types.NewXText("bob")), types.NewXArray(types.XBooleanFalse, types.NewXText("bob")), true},
+		{types.NewXArray(types.XBooleanFalse, types.NewXText("abc")), types.NewXArray(types.XBooleanFalse, types.NewXText("bob")), false},
+		{types.NewXArray(types.XBooleanFalse, types.NewXText("bob")), types.NewXArray(types.NewXText("bob"), types.XBooleanFalse), false}, // order matters
+
 		{types.XBooleanFalse, types.XBooleanFalse, true},
 		{types.XBooleanTrue, types.XBooleanFalse, false},
-		{types.NewXNumberFromInt(123), types.NewXNumberFromInt(123), true},
-		{types.NewXNumberFromInt(123), types.NewXNumberFromInt(124), false},
+
+		{types.NewXDate(dates.NewDate(2018, 4, 9)), types.NewXDate(dates.NewDate(2018, 4, 9)), true},
+		{types.NewXDate(dates.NewDate(2019, 4, 9)), types.NewXDate(dates.NewDate(2018, 4, 10)), false},
+
 		{types.NewXDateTime(time.Date(2018, 4, 9, 17, 1, 30, 0, time.UTC)), types.NewXDateTime(time.Date(2018, 4, 9, 17, 1, 30, 0, time.UTC)), true},
 		{types.NewXDateTime(time.Date(2019, 4, 9, 17, 1, 30, 0, time.UTC)), types.NewXDateTime(time.Date(2018, 4, 9, 17, 1, 30, 0, time.UTC)), false},
-		{NewTestXObject("Hello", 123), NewTestXObject("Hello", 123), true},
-		{NewTestXObject("Hello", 456), NewTestXObject("Hello", 123), true},
+
+		{
+			types.NewXObject(map[string]types.XValue{"foo": types.XBooleanFalse, "bar": types.NewXText("bob")}),
+			types.NewXObject(map[string]types.XValue{"foo": types.XBooleanFalse, "bar": types.NewXText("bob")}),
+			true,
+		},
+		{
+			types.NewXObject(map[string]types.XValue{"__default__": types.XBooleanTrue, "bar": types.NewXText("bob")}),
+			types.NewXObject(map[string]types.XValue{"__default__": types.XBooleanFalse, "bar": types.NewXText("bob")}),
+			false, // different default
+		},
+		{
+			types.NewXObject(map[string]types.XValue{"foo": types.XBooleanFalse, "bar": types.NewXText("bob")}),
+			types.NewXObject(map[string]types.XValue{"foo": types.XBooleanFalse}),
+			false, // different number of keys
+		},
+		{
+			types.NewXObject(map[string]types.XValue{"foo": types.XBooleanFalse, "bar": types.NewXText("bob")}),
+			types.NewXObject(map[string]types.XValue{"foo": types.XBooleanFalse, "baz": types.NewXText("bob")}),
+			false, // different key
+		},
+		{
+			types.NewXObject(map[string]types.XValue{"foo": types.XBooleanFalse, "bar": types.NewXText("bob")}),
+			types.NewXObject(map[string]types.XValue{"foo": types.XBooleanFalse, "bar": types.NewXText("boo")}),
+			false, // different value
+		},
+
+		{types.NewXError(errors.Errorf("Error")), types.NewXError(errors.Errorf("Error")), true},
+		{types.NewXError(errors.Errorf("Error")), types.XDateTimeZero, false},
+
+		{types.NewXText("bob"), types.NewXText("bob"), true},
+		{types.NewXText("bob"), types.NewXText("abc"), false},
+
+		{types.NewXTime(dates.NewTimeOfDay(10, 30, 0, 123456789)), types.NewXTime(dates.NewTimeOfDay(10, 30, 0, 123456789)), true},
+		{types.NewXTime(dates.NewTimeOfDay(10, 30, 0, 123456789)), types.NewXTime(dates.NewTimeOfDay(10, 30, 0, 987654321)), false},
+
+		{types.NewXNumberFromInt(123), types.NewXNumberFromInt(123), true},
+		{types.NewXNumberFromInt(123), types.NewXNumberFromInt(124), false},
 	}
 
-	for _, test := range tests {
-		assert.Equal(t, test.result, types.Equals(env, test.x1, test.x2), "equality mismatch for inputs '%s' and '%s'", test.x1, test.x2)
+	for _, tc := range tests {
+		assert.Equal(t, tc.result, types.Equals(tc.x1, tc.x2), "equality mismatch for inputs '%s' and '%s'", tc.x1, tc.x2)
 	}
+
+	// test we get panic if we forgot to code Equals for a new xvalue type
+	assert.Panics(t, func() { types.Equals(&XBogusType{}, &XBogusType{}) })
+}
+
+type XBogusType struct {
+	types.XText
 }
 
 func TestIsEmpty(t *testing.T) {
 	assert.True(t, types.IsEmpty(nil))
 	assert.True(t, types.IsEmpty(types.NewXArray()))
-	assert.True(t, types.IsEmpty(types.NewEmptyXMap()))
+	assert.True(t, types.IsEmpty(types.XObjectEmpty))
 	assert.True(t, types.IsEmpty(types.NewXText("")))
 	assert.False(t, types.IsEmpty(types.NewXText("a")))
 	assert.False(t, types.IsEmpty(types.XBooleanFalse))
 	assert.False(t, types.IsEmpty(types.XBooleanTrue))
 	assert.False(t, types.IsEmpty(types.NewXNumberFromInt(0)))
 	assert.False(t, types.IsEmpty(types.NewXNumberFromInt(123)))
-}
-
-func TestReduce(t *testing.T) {
-	env := utils.NewEnvironmentBuilder().Build()
-
-	assert.Nil(t, types.Reduce(env, nil))
-	assert.Equal(t, types.NewXText("Hello"), types.Reduce(env, NewTestXObject("Hello", 123)))
 }

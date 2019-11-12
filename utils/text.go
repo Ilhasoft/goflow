@@ -8,12 +8,12 @@ import (
 var snakedChars = regexp.MustCompile(`[^\p{L}\d_]+`)
 
 // treats sequences of letters/numbers/_/' as tokens, and symbols as individual tokens
-var wordTokenRegex = regexp.MustCompile(`[\pL\pN_']+|\pS`)
+var wordTokenRegex = regexp.MustCompile(`[\pM\pL\pN_']+|\pS`)
 
 // Snakify turns the passed in string into a context reference. We replace all whitespace
 // characters with _ and replace any duplicate underscores
 func Snakify(text string) string {
-	return strings.Trim(strings.ToLower(snakedChars.ReplaceAllString(text, "_")), "_")
+	return strings.ToLower(snakedChars.ReplaceAllString(strings.TrimSpace(text), "_"))
 }
 
 // TokenizeString returns the words in the passed in string, split by non word characters including emojis
@@ -39,10 +39,10 @@ func TokenizeStringByChars(str string, chars string) []string {
 func PrefixOverlap(s1, s2 string) int {
 	r1 := []rune(s1)
 	r2 := []rune(s2)
-	r := 0
-	for ; r < len(r1) && r < len(r2) && r1[r] == r2[r]; r++ {
+	i := 0
+	for ; i < len(r1) && i < len(r2) && r1[i] == r2[i]; i++ {
 	}
-	return r
+	return i
 }
 
 // StringSlices returns the slices of s defined by pairs of indexes in indices
@@ -52,4 +52,29 @@ func StringSlices(s string, indices []int) []string {
 		slices = append(slices, s[indices[i]:indices[i+1]])
 	}
 	return slices
+}
+
+// StringSliceContains determines whether the given slice of strings contains the given string
+func StringSliceContains(slice []string, str string, caseSensitive bool) bool {
+	for _, s := range slice {
+		if (caseSensitive && s == str) || (!caseSensitive && strings.ToLower(s) == strings.ToLower(str)) {
+			return true
+		}
+	}
+	return false
+}
+
+// Indent indents each non-empty line in the given string
+func Indent(s string, prefix string) string {
+	output := strings.Builder{}
+
+	bol := true
+	for _, c := range s {
+		if bol && c != '\n' {
+			output.WriteString(prefix)
+		}
+		output.WriteRune(c)
+		bol = c == '\n'
+	}
+	return output.String()
 }

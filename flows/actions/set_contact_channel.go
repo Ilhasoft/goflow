@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	RegisterType(TypeSetContactChannel, func() flows.Action { return &SetContactChannelAction{} })
+	registerType(TypeSetContactChannel, func() flows.Action { return &SetContactChannelAction{} })
 }
 
 // TypeSetContactChannel is the type for the set contact channel action
@@ -22,21 +22,21 @@ const TypeSetContactChannel string = "set_contact_channel"
 //   {
 //     "uuid": "8eebd020-1af5-431c-b943-aa670fc74da9",
 //     "type": "set_contact_channel",
-//     "channel": {"uuid": "4bb288a0-7fca-4da1-abe8-59a593aff648", "name": "FAcebook Channel"}
+//     "channel": {"uuid": "4bb288a0-7fca-4da1-abe8-59a593aff648", "name": "Facebook Channel"}
 //   }
 //
 // @action set_contact_channel
 type SetContactChannelAction struct {
-	BaseAction
+	baseAction
 	onlineAction
 
 	Channel *assets.ChannelReference `json:"channel" validate:"omitempty,dive"`
 }
 
-// NewSetContactChannelAction creates a new set channel action
-func NewSetContactChannelAction(uuid flows.ActionUUID, channel *assets.ChannelReference) *SetContactChannelAction {
+// NewSetContactChannel creates a new set channel action
+func NewSetContactChannel(uuid flows.ActionUUID, channel *assets.ChannelReference) *SetContactChannelAction {
 	return &SetContactChannelAction{
-		BaseAction: NewBaseAction(TypeSetContactChannel, uuid),
+		baseAction: newBaseAction(TypeSetContactChannel, uuid),
 		Channel:    channel,
 	}
 }
@@ -45,7 +45,7 @@ func NewSetContactChannelAction(uuid flows.ActionUUID, channel *assets.ChannelRe
 func (a *SetContactChannelAction) Execute(run flows.FlowRun, step flows.Step, logModifier flows.ModifierCallback, logEvent flows.EventCallback) error {
 	contact := run.Contact()
 	if contact == nil {
-		logEvent(events.NewErrorEventf("can't execute action in session without a contact"))
+		logEvent(events.NewErrorf("can't execute action in session without a contact"))
 		return nil
 	}
 
@@ -54,12 +54,6 @@ func (a *SetContactChannelAction) Execute(run flows.FlowRun, step flows.Step, lo
 		channel = run.Session().Assets().Channels().Get(a.Channel.UUID)
 	}
 
-	a.applyModifier(run, modifiers.NewChannelModifier(channel), logModifier, logEvent)
+	a.applyModifier(run, modifiers.NewChannel(channel), logModifier, logEvent)
 	return nil
-}
-
-// Inspect inspects this object and any children
-func (a *SetContactChannelAction) Inspect(inspect func(flows.Inspectable)) {
-	inspect(a)
-	flows.InspectReference(a.Channel, inspect)
 }

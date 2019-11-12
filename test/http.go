@@ -12,12 +12,14 @@ import (
 func NewTestHTTPServer(port int) *httptest.Server {
 	server := httptest.NewUnstartedServer(http.HandlerFunc(testHTTPHandler))
 
-	// manually create a listener for our test server so that our output is predictable
-	l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-	if err != nil {
-		panic(err.Error())
+	if port > 0 {
+		// manually create a listener for our test server so that our output is predictable
+		l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			panic(err.Error())
+		}
+		server.Listener = l
 	}
-	server.Listener = l
 	server.Start()
 	return server
 }
@@ -50,7 +52,9 @@ func testHTTPHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		w.Header().Set("Content-Length", sizeParam)
-
+	case "textjs":
+		contentType = "text/javascript; charset=iso-8859-1"
+		data = []byte(`{ "ok": "true" }`)
 	case "typeless":
 		w.Header().Set("Content-Type", "")
 	case "unavailable":

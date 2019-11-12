@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/events"
 	"github.com/nyaruka/goflow/utils"
 )
 
 func init() {
-	RegisterType(TypeName, readNameModifier)
+	registerType(TypeName, readNameModifier)
 }
 
 // TypeName is the type of our name modifier
@@ -23,8 +24,8 @@ type NameModifier struct {
 	Name string `json:"name"`
 }
 
-// NewNameModifier creates a new name modifier
-func NewNameModifier(name string) *NameModifier {
+// NewName creates a new name modifier
+func NewName(name string) *NameModifier {
 	return &NameModifier{
 		baseModifier: newBaseModifier(TypeName),
 		Name:         name,
@@ -32,7 +33,7 @@ func NewNameModifier(name string) *NameModifier {
 }
 
 // Apply applies this modification to the given contact
-func (m *NameModifier) Apply(env utils.Environment, assets flows.SessionAssets, contact *flows.Contact, log flows.EventCallback) {
+func (m *NameModifier) Apply(env envs.Environment, assets flows.SessionAssets, contact *flows.Contact, log flows.EventCallback) {
 	if contact.Name() != m.Name {
 		// truncate value if necessary
 		if len(m.Name) > env.MaxValueLength() {
@@ -40,7 +41,7 @@ func (m *NameModifier) Apply(env utils.Environment, assets flows.SessionAssets, 
 		}
 
 		contact.SetName(m.Name)
-		log(events.NewContactNameChangedEvent(m.Name))
+		log(events.NewContactNameChanged(m.Name))
 		m.reevaluateDynamicGroups(env, assets, contact, log)
 	}
 }

@@ -3,15 +3,14 @@
         "description": "Error event if session has no contact",
         "no_contact": true,
         "action": {
-            "uuid": "8eebd020-1af5-431c-b943-aa670fc74da9",
+            "uuid": "ad154980-7bf7-4ab8-8728-545fd6378912",
             "type": "set_contact_name",
             "name": "John"
         },
         "events": [
             {
                 "created_on": "2018-10-18T14:20:30.000123456Z",
-                "fatal": false,
-                "step_uuid": "e7187099-7d38-4f60-955c-325957214c42",
+                "step_uuid": "59d74b86-3e2f-4a93-aece-b05d2fdcde0c",
                 "text": "can't execute action in session without a contact",
                 "type": "error"
             }
@@ -21,21 +20,20 @@
                 "John"
             ],
             "dependencies": [],
-            "result_names": []
+            "results": []
         }
     },
     {
         "description": "Error event and action skipped if name contains expression error",
         "action": {
-            "uuid": "8eebd020-1af5-431c-b943-aa670fc74da9",
+            "uuid": "ad154980-7bf7-4ab8-8728-545fd6378912",
             "type": "set_contact_name",
             "name": "@(1 / 0)"
         },
         "events": [
             {
                 "created_on": "2018-10-18T14:20:30.000123456Z",
-                "fatal": false,
-                "step_uuid": "e7187099-7d38-4f60-955c-325957214c42",
+                "step_uuid": "59d74b86-3e2f-4a93-aece-b05d2fdcde0c",
                 "text": "error evaluating @(1 / 0): division by zero",
                 "type": "error"
             }
@@ -45,13 +43,13 @@
                 "@(1 / 0)"
             ],
             "dependencies": [],
-            "result_names": []
+            "results": []
         }
     },
     {
         "description": "NOOP if name doesn't change",
         "action": {
-            "uuid": "8eebd020-1af5-431c-b943-aa670fc74da9",
+            "uuid": "ad154980-7bf7-4ab8-8728-545fd6378912",
             "type": "set_contact_name",
             "name": "Ryan Lewis"
         },
@@ -61,13 +59,13 @@
                 "Ryan Lewis"
             ],
             "dependencies": [],
-            "result_names": []
+            "results": []
         }
     },
     {
         "description": "Name changed event if name cleared",
         "action": {
-            "uuid": "8eebd020-1af5-431c-b943-aa670fc74da9",
+            "uuid": "ad154980-7bf7-4ab8-8728-545fd6378912",
             "type": "set_contact_name",
             "name": ""
         },
@@ -75,7 +73,7 @@
             {
                 "created_on": "2018-10-18T14:20:30.000123456Z",
                 "name": "",
-                "step_uuid": "e7187099-7d38-4f60-955c-325957214c42",
+                "step_uuid": "59d74b86-3e2f-4a93-aece-b05d2fdcde0c",
                 "type": "contact_name_changed"
             },
             {
@@ -86,7 +84,7 @@
                         "uuid": "5389414a-66b8-408b-afec-07c5d68f6784"
                     }
                 ],
-                "step_uuid": "e7187099-7d38-4f60-955c-325957214c42",
+                "step_uuid": "59d74b86-3e2f-4a93-aece-b05d2fdcde0c",
                 "type": "contact_groups_changed"
             }
         ],
@@ -123,7 +121,7 @@
     {
         "description": "Name changed event if name changes",
         "action": {
-            "uuid": "8eebd020-1af5-431c-b943-aa670fc74da9",
+            "uuid": "ad154980-7bf7-4ab8-8728-545fd6378912",
             "type": "set_contact_name",
             "name": "Bryan"
         },
@@ -131,7 +129,7 @@
             {
                 "created_on": "2018-10-18T14:20:30.000123456Z",
                 "name": "Bryan",
-                "step_uuid": "e7187099-7d38-4f60-955c-325957214c42",
+                "step_uuid": "59d74b86-3e2f-4a93-aece-b05d2fdcde0c",
                 "type": "contact_name_changed"
             }
         ],
@@ -166,20 +164,20 @@
                 "Bryan"
             ],
             "dependencies": [],
-            "result_names": []
+            "results": []
         }
     },
     {
         "description": "Name value truncated if too long",
         "action": {
-            "uuid": "8eebd020-1af5-431c-b943-aa670fc74da9",
+            "uuid": "ad154980-7bf7-4ab8-8728-545fd6378912",
             "type": "set_contact_name",
             "name": "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui dolorem eum fugiat quo voluptas nulla pariatur?"
         },
         "events": [
             {
                 "created_on": "2018-10-18T14:20:30.000123456Z",
-                "step_uuid": "e7187099-7d38-4f60-955c-325957214c42",
+                "step_uuid": "59d74b86-3e2f-4a93-aece-b05d2fdcde0c",
                 "type": "contact_name_changed",
                 "name": "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis sus"
             }
@@ -215,7 +213,7 @@
                 "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui dolorem eum fugiat quo voluptas nulla pariatur?"
             ],
             "dependencies": [],
-            "result_names": []
+            "results": []
         }
     }
 ]

@@ -1,286 +1,281 @@
+# Overview
+
+Excellent gets its name from borrowing some of the syntax and function names of formulas in Microsoft Excel™, 
+though it has evolved over time and similarities are now much fewer. It is an expression based templating 
+language which aims to make it easy to generate text from a context of values.
+
 # Templates
 
-Some properties of entities in the flow specification are _templates_ - that is their values are dynamic and are evaluated at runtime. 
-Templates can contain single variables or more complex expressions. A single variable is embedded using the `@` character. For example 
-the template `Hi @contact.name` contains a single variable which at runtime will be replaced with the name of the current contact.
+Templates can contain single variables or more complex expressions. A single variable is embedded using the `@` 
+character. For example the template `Hi @foo` contains a single variable which at runtime will be replaced with 
+the value of `foo` in the context.
 
-More complex expressions can be embedded using the `@(...)` syntax. For example the template `Hi @("Dr " & upper(contact.name))` takes 
-the contact name, converts it to uppercase, and the prefixes it with another string.
+More complex expressions can be embedded using the `@(...)` syntax. For example the template `Hi @("Dr " & upper(foo))` 
+takes the value of `foo`, converts it to uppercase, and the prefixes it with another string. Note than within a 
+complex expression you don't prefix variables with `@`.
 
-The `@` symbol can be escaped in templates by repeating it, ie, `Hi @@twitter` would output `Hi @twitter`.
+The `@` symbol can be escaped in templates by repeating it, e.g, `Hi @@twitter` will output `Hi @twitter`.
 
-# Context
+# Types
 
-The context is all the variables which are accessible in expressions and contains the following top-level variables:
+Excellent has the following types:
 
- * `run` the current [run](#context:run)
- * `parent` the parent of the current [run](#context:run), i.e. the run that started the current run
- * `child` the child of the current [run](#context:run), i.e. the last subflow
- * `contact` the current [contact](#context:contact), shortcut for `@run.contact`
- * `results` the current [results](#context:result), shortcut for `@run.results`
- * `trigger` the [trigger](#context:trigger) that initiated this session
- * `input` the last [input](#context:input) from the contact
+ * [Array](#type:array)
+ * [Boolean](#type:boolean)
+ * [Date](#type:date)
+ * [DateTime](#type:datetime)
+ * [Function](#type:function)
+ * [Number](#type:number)
+ * [Object](#type:object)
+ * [Text](#type:text)
+ * [Time](#type:time)
 
-The following types appear in the context:
+<div class="types">
+<h2 class="item_title"><a name="type:array" href="#type:array">array</a></h2>
 
- * [Channel](#context:channel)
- * [Contact](#context:contact)
- * [Flow](#context:flow)
- * [Group](#context:group)
- * [Input](#context:input)
- * [Result](#context:result)
- * [Run](#context:run)
- * [Trigger](#context:trigger)
- * [URN](#context:urn)
-
-<div class="context">
-<a name="context:attachment"></a>
-
-## Attachment
-
-Is a media attachment on a message, and it has the following properties which can be accessed:
-
- * `content_type` the MIME type of the attachment
- * `url` the URL of the attachment
-
-Examples:
+Is an array of items.
 
 
 ```objectivec
-@(input.attachments[0].content_type) → image/jpeg
-@(input.attachments[0].url) → http://s3.amazon.com/bucket/test.jpg
-@(json(input.attachments[0])) → {"content_type":"image/jpeg","url":"http://s3.amazon.com/bucket/test.jpg"}
+@(array(1, "x", true)) → [1, x, true]
+@(array(1, "x", true)[1]) → x
+@(count(array(1, "x", true))) → 3
+@(json(array(1, "x", true))) → [1,"x",true]
 ```
 
-<a name="context:channel"></a>
+<h2 class="item_title"><a name="type:boolean" href="#type:boolean">boolean</a></h2>
 
-## Channel
-
-Represents a means for sending and receiving input during a flow run. It renders as its name in a template,
-and has the following properties which can be accessed:
-
- * `uuid` the UUID of the channel
- * `name` the name of the channel
- * `address` the address of the channel
-
-Examples:
+Is a boolean `true` or `false`.
 
 
 ```objectivec
-@contact.channel → My Android Phone
-@contact.channel.name → My Android Phone
-@contact.channel.address → +12345671111
-@input.channel.uuid → 57f1078f-88aa-46f4-a59a-948a5739c03d
-@(json(contact.channel)) → {"address":"+12345671111","name":"My Android Phone","uuid":"57f1078f-88aa-46f4-a59a-948a5739c03d"}
+@(true) → true
+@(1 = 1) → true
+@(1 = 2) → false
+@(json(true)) → true
 ```
 
-<a name="context:contact"></a>
+<h2 class="item_title"><a name="type:date" href="#type:date">date</a></h2>
 
-## Contact
-
-Represents a person who is interacting with the flow. It renders as the person's name
-(or perferred URN if name isn't set) in a template, and has the following properties which can be accessed:
-
- * `uuid` the UUID of the contact
- * `name` the full name of the contact
- * `first_name` the first name of the contact
- * `language` the [ISO-639-3](http://www-01.sil.org/iso639-3/) language code of the contact
- * `timezone` the timezone name of the contact
- * `created_on` the datetime when the contact was created
- * `urns` all [URNs](#context:urn) the contact has set
- * `urns.[scheme]` all the [URNs](#context:urn) the contact has set for the particular URN scheme
- * `urn` shorthand for `@(format_urn(c.urns.0))`, i.e. the contact's preferred [URN](#context:urn) in friendly formatting
- * `groups` all the [groups](#context:group) that the contact belongs to
- * `fields` all the custom contact fields the contact has set
- * `fields.[snaked_field_name]` the value of the specific field
- * `channel` shorthand for `contact.urns[0].channel`, i.e. the [channel](#context:channel) of the contact's preferred URN
-
-Examples:
+Is a Gregorian calendar date value.
 
 
 ```objectivec
-@contact → Ryan Lewis
-@contact.name → Ryan Lewis
-@contact.first_name → Ryan
-@contact.language → eng
-@contact.timezone → America/Guayaquil
-@contact.created_on → 2018-06-20T11:40:30.123456Z
-@contact.urns → tel:+12065551212, twitterid:54784326227#nyaruka, mailto:foo@bar.com
-@(contact.urns[0]) → tel:+12065551212
-@contact.urns.tel → tel:+12065551212
-@(contact.urns.mailto[0]) → mailto:foo@bar.com
-@contact.urn → tel:+12065551212
-@contact.groups → Testers, Males
-@contact.fields → activation_token: AACC55\nage: 23\ngender: Male\njoin_date: 2017-12-02T00:00:00.000000-02:00\nnot_set:\x20
-@contact.fields.activation_token → AACC55
-@contact.fields.gender → Male
+@(date_from_parts(2019, 4, 11)) → 2019-04-11
+@(format_date(date_from_parts(2019, 4, 11))) → 11-04-2019
+@(json(date_from_parts(2019, 4, 11))) → "2019-04-11"
 ```
 
-<a name="context:flow"></a>
+<h2 class="item_title"><a name="type:datetime" href="#type:datetime">datetime</a></h2>
 
-## Flow
-
-Describes the ordered logic of actions and routers. It renders as its name in a template, and has the following
-properties which can be accessed:
-
- * `uuid` the UUID of the flow
- * `name` the name of the flow
- * `revision` the revision number of the flow
-
-Examples:
+Is a datetime value.
 
 
 ```objectivec
-@run.flow → Registration
-@child.flow → Collect Age
-@run.flow.uuid → 50c3706e-fedb-42c0-8eab-dda3335714b7
-@(json(run.flow)) → {"name":"Registration","revision":123,"uuid":"50c3706e-fedb-42c0-8eab-dda3335714b7"}
+@(datetime("1979-07-18T10:30:45.123456Z")) → 1979-07-18T10:30:45.123456Z
+@(format_datetime(datetime("1979-07-18T10:30:45.123456Z"))) → 18-07-1979 05:30
+@(json(datetime("1979-07-18T10:30:45.123456Z"))) → "1979-07-18T10:30:45.123456Z"
 ```
 
-<a name="context:group"></a>
+<h2 class="item_title"><a name="type:function" href="#type:function">function</a></h2>
 
-## Group
-
-Represents a grouping of contacts. It can be static (contacts are added and removed manually through
-[actions](#action:add_contact_groups)) or dynamic (contacts are added automatically by a query). It renders as its name in a
-template, and has the following properties which can be accessed:
-
- * `uuid` the UUID of the group
- * `name` the name of the group
-
-Examples:
+Is a callable function.
 
 
 ```objectivec
-@contact.groups → Testers, Males
-@(contact.groups[0].uuid) → b7cf0d83-f1c9-411c-96fd-c511a4cfa86d
-@(contact.groups[1].name) → Males
-@(json(contact.groups[1])) → {"name":"Males","uuid":"4f1f98fc-27a7-4a69-bbdb-24744ba739a9"}
+@(upper) → function
+@(array(upper)[0]("abc")) → ABC
+@(json(upper)) → null
 ```
 
-<a name="context:input"></a>
+<h2 class="item_title"><a name="type:number" href="#type:number">number</a></h2>
 
-## Input
-
-Describes input from the contact and currently we only support one type of input: `msg`. Any input has the following
-properties which can be accessed:
-
- * `uuid` the UUID of the input
- * `type` the type of the input, e.g. `msg`
- * `channel` the [channel](#context:channel) that the input was received on
- * `created_on` the time when the input was created
-
-An input of type `msg` renders as its text and attachments in a template, and has the following additional properties:
-
- * `text` the text of the message
- * `attachments` any [attachments](#context:attachment) on the message
- * `urn` the [URN](#context:urn) that the input was received on
-
-Examples:
+Is a whole or fractional number.
 
 
 ```objectivec
-@input → Hi there\nhttp://s3.amazon.com/bucket/test.jpg\nhttp://s3.amazon.com/bucket/test.mp3
-@input.type → msg
-@input.text → Hi there
-@input.attachments → http://s3.amazon.com/bucket/test.jpg, http://s3.amazon.com/bucket/test.mp3
-@(json(input)) → {"attachments":[{"content_type":"image/jpeg","url":"http://s3.amazon.com/bucket/test.jpg"},{"content_type":"audio/mp3","url":"http://s3.amazon.com/bucket/test.mp3"}],"channel":{"address":"+12345671111","name":"My Android Phone","uuid":"57f1078f-88aa-46f4-a59a-948a5739c03d"},"created_on":"2017-12-31T11:35:10.035757-02:00","text":"Hi there","type":"msg","urn":{"display":"(206) 555-1212","path":"+12065551212","scheme":"tel"},"uuid":"9bf91c2b-ce58-4cef-aacc-281e03f69ab5"}
+@(1234) → 1234
+@(1234.5678) → 1234.5678
+@(format_number(1234.5670)) → 1,234.567
+@(json(1234.5678)) → 1234.5678
 ```
 
-<a name="context:result"></a>
+<h2 class="item_title"><a name="type:object" href="#type:object">object</a></h2>
 
-## Result
-
-Describes a value captured during a run's execution. It might have been implicitly created by a router, or explicitly
-created by a [set_run_result](#action:set_run_result) action.It renders as its value in a template, and has the following
-properties which can be accessed:
-
- * `value` the value of the result
- * `category` the category of the result
- * `category_localized` the localized category of the result
- * `input` the input associated with the result
- * `node_uuid` the UUID of the node where the result was created
- * `created_on` the time when the result was created
-
-Examples:
+Is an object with named properties.
 
 
 ```objectivec
-@results.favorite_color → red
-@results.favorite_color.value → red
-@results.favorite_color.category → Red
+@(object("foo", 1, "bar", "x")) → {bar: x, foo: 1}
+@(object("foo", 1, "bar", "x").bar) → x
+@(object("foo", 1, "bar", "x")["bar"]) → x
+@(count(object("foo", 1, "bar", "x"))) → 2
+@(json(object("foo", 1, "bar", "x"))) → {"bar":"x","foo":1}
 ```
 
-<a name="context:run"></a>
+<h2 class="item_title"><a name="type:text" href="#type:text">text</a></h2>
 
-## Run
-
-Is a single contact's journey through a flow. It records the path they have taken, and the results that have been
-collected. It has several properties which can be accessed in expressions:
-
- * `uuid` the UUID of the run
- * `flow` the [flow](#context:flow) of the run
- * `contact` the [contact](#context:contact) of the flow run
- * `input` the [input](#context:input) of the current run
- * `results` the results that have been saved for this run
- * `results.[snaked_result_name]` the value of the specific result, e.g. `results.age`
-
-Examples:
+Is a string of characters.
 
 
 ```objectivec
-@run.flow.name → Registration
+@("abc") → abc
+@(text_length("abc")) → 3
+@(upper("abc")) → ABC
+@(json("abc")) → "abc"
 ```
 
-<a name="context:trigger"></a>
+<h2 class="item_title"><a name="type:time" href="#type:time">time</a></h2>
 
-## Trigger
-
-Represents something which can initiate a session with the flow engine. It has several properties which can be
-accessed in expressions:
-
- * `type` the type of the trigger, one of "manual" or "flow"
- * `params` the parameters passed to the trigger
-
-Examples:
+Is a time of day.
 
 
 ```objectivec
-@trigger.type → flow_action
-@trigger.params → {"source": "website","address": {"state": "WA"}}
-@(json(trigger)) → {"params":{"source":"website","address":{"state":"WA"}},"type":"flow_action"}
+@(time_from_parts(16, 30, 45)) → 16:30:45.000000
+@(format_time(time_from_parts(16, 30, 45))) → 16:30
+@(json(time_from_parts(16, 30, 45))) → "16:30:45.000000"
 ```
 
-<a name="context:urn"></a>
 
-## Urn
+</div>
 
-Represents a destination for an outgoing message or a source of an incoming message. It is string composed of 3
-components: scheme, path, and display (optional). For example:
+# Operators
 
- - _tel:+16303524567_
- - _twitterid:54784326227#nyaruka_
- - _telegram:34642632786#bobby_
+<div class="operators">
+<h2 class="item_title"><a name="operator:add" href="#operator:add">add</a></h2>
 
-It has several properties which can be accessed in expressions:
-
- * `scheme` the scheme of the URN, e.g. "tel", "twitter"
- * `path` the path of the URN, e.g. "+16303524567"
- * `display` the display portion of the URN, e.g. "+16303524567"
- * `channel` the preferred [channel](#context:channel) of the URN
-
-To render a URN in a human friendly format, use the [format_urn](expressions.html#function:format_urn) function.
-
-Examples:
+Adds two numbers.
 
 
 ```objectivec
-@(contact.urns[0]) → tel:+12065551212
-@(contact.urns[0].scheme) → tel
-@(contact.urns[0].path) → +12065551212
-@(contact.urns[1].display) → nyaruka
-@(format_urn(contact.urns[0])) → (206) 555-1212
-@(json(contact.urns[0])) → {"display":"(206) 555-1212","path":"+12065551212","scheme":"tel"}
+@(2 + 3) → 5
+@(fields.age + 10) → 33
+```
+
+<h2 class="item_title"><a name="operator:concatenate" href="#operator:concatenate">concatenate</a></h2>
+
+Joins two text values together.
+
+
+```objectivec
+@("hello" & " " & "bar") → hello bar
+@("hello" & null) → hello
+```
+
+<h2 class="item_title"><a name="operator:divide" href="#operator:divide">divide</a></h2>
+
+Divides a number by another.
+
+
+```objectivec
+@(4 / 2) → 2
+@(3 / 2) → 1.5
+@(46 / fields.age) → 2
+@(3 / 0) → ERROR
+```
+
+<h2 class="item_title"><a name="operator:equal" href="#operator:equal">equal</a></h2>
+
+Returns true if two values are textually equal.
+
+
+```objectivec
+@("hello" = "hello") → true
+@("hello" = "bar") → false
+@(1 = 1) → true
+```
+
+<h2 class="item_title"><a name="operator:exponent" href="#operator:exponent">exponent</a></h2>
+
+Raises a number to the power of a another number.
+
+
+```objectivec
+@(2 ^ 8) → 256
+```
+
+<h2 class="item_title"><a name="operator:greaterthan" href="#operator:greaterthan">greaterthan</a></h2>
+
+Returns true if the first number is greater than the second.
+
+
+```objectivec
+@(2 > 3) → false
+@(3 > 3) → false
+@(4 > 3) → true
+```
+
+<h2 class="item_title"><a name="operator:greaterthanorequal" href="#operator:greaterthanorequal">greaterthanorequal</a></h2>
+
+Returns true if the first number is greater than or equal to the second.
+
+
+```objectivec
+@(2 >= 3) → false
+@(3 >= 3) → true
+@(4 >= 3) → true
+```
+
+<h2 class="item_title"><a name="operator:lessthan" href="#operator:lessthan">lessthan</a></h2>
+
+Returns true if the first number is less than the second.
+
+
+```objectivec
+@(2 < 3) → true
+@(3 < 3) → false
+@(4 < 3) → false
+```
+
+<h2 class="item_title"><a name="operator:lessthanorequal" href="#operator:lessthanorequal">lessthanorequal</a></h2>
+
+Returns true if the first number is less than or equal to the second.
+
+
+```objectivec
+@(2 <= 3) → true
+@(3 <= 3) → true
+@(4 <= 3) → false
+```
+
+<h2 class="item_title"><a name="operator:multiply" href="#operator:multiply">multiply</a></h2>
+
+Multiplies two numbers.
+
+
+```objectivec
+@(3 * 2) → 6
+@(fields.age * 3) → 69
+```
+
+<h2 class="item_title"><a name="operator:negate" href="#operator:negate">negate</a></h2>
+
+Negates a number
+
+
+```objectivec
+@(-fields.age) → -23
+```
+
+<h2 class="item_title"><a name="operator:notequal" href="#operator:notequal">notequal</a></h2>
+
+Returns true if two values are textually not equal.
+
+
+```objectivec
+@("hello" != "hello") → false
+@("hello" != "bar") → true
+@(1 != 2) → true
+```
+
+<h2 class="item_title"><a name="operator:subtract" href="#operator:subtract">subtract</a></h2>
+
+Subtracts two numbers.
+
+
+```objectivec
+@(3 - 2) → 1
+@(2 - 3) → -1
 ```
 
 
@@ -288,17 +283,14 @@ Examples:
 
 # Functions
 
-Templates also have access to a set of functions which can be used to further manipulate the context. Functions are called 
-using the `@(function_name(args..))` syntax. For example, to title-case a contact's name in a message, you can use `@(title(contact.name))`. 
-Context variables referred to within functions do not need a leading `@`. Functions can also use literal numbers or strings as arguments, for example
-`@(length(split("1 2 3", " "))`.
+Expressions have access to a set of built-in functions which can be used to perform more complex tasks. Functions are called 
+using the `@(function_name(args..))` syntax, and can take as arguments either literal values `@(length(split("1 2 3", " "))` 
+or variables in the context `@(title(contact.name))`.
 
 <div class="functions">
-<a name="function:abs"></a>
+<h2 class="item_title"><a name="function:abs" href="#function:abs">abs(number)</a></h2>
 
-## abs(num)
-
-Returns the absolute value of `num`.
+Returns the absolute value of `number`.
 
 
 ```objectivec
@@ -307,9 +299,7 @@ Returns the absolute value of `num`.
 @(abs("foo")) → ERROR
 ```
 
-<a name="function:and"></a>
-
-## and(values...)
+<h2 class="item_title"><a name="function:and" href="#function:and">and(values...)</a></h2>
 
 Returns whether all the given `values` are truthy.
 
@@ -319,9 +309,7 @@ Returns whether all the given `values` are truthy.
 @(and(true, false, true)) → false
 ```
 
-<a name="function:array"></a>
-
-## array(values...)
+<h2 class="item_title"><a name="function:array" href="#function:array">array(values...)</a></h2>
 
 Takes multiple `values` and returns them as an array.
 
@@ -329,13 +317,20 @@ Takes multiple `values` and returns them as an array.
 ```objectivec
 @(array("a", "b", 356)[1]) → b
 @(join(array("a", "b", "c"), "|")) → a|b|c
-@(length(array())) → 0
-@(length(array("a", "b"))) → 2
+@(count(array())) → 0
+@(count(array("a", "b"))) → 2
 ```
 
-<a name="function:boolean"></a>
+<h2 class="item_title"><a name="function:attachment_parts" href="#function:attachment_parts">attachment_parts(attachment)</a></h2>
 
-## boolean(value)
+Parses an attachment into its different parts
+
+
+```objectivec
+@(attachment_parts("image/jpeg:https://example.com/test.jpg")) → {content_type: image/jpeg, url: https://example.com/test.jpg}
+```
+
+<h2 class="item_title"><a name="function:boolean" href="#function:boolean">boolean(value)</a></h2>
 
 Tries to convert `value` to a boolean.
 
@@ -348,9 +343,7 @@ An error is returned if the value can't be converted.
 @(boolean(1 / 0)) → ERROR
 ```
 
-<a name="function:char"></a>
-
-## char(code)
+<h2 class="item_title"><a name="function:char" href="#function:char">char(code)</a></h2>
 
 Returns the character for the given UNICODE `code`.
 
@@ -363,11 +356,9 @@ It is the inverse of [code](expressions.html#function:code).
 @(char("foo")) → ERROR
 ```
 
-<a name="function:clean"></a>
+<h2 class="item_title"><a name="function:clean" href="#function:clean">clean(text)</a></h2>
 
-## clean(text)
-
-Strips any non-printable characters from `text`.
+Removes any non-printable characters from `text`.
 
 
 ```objectivec
@@ -375,9 +366,7 @@ Strips any non-printable characters from `text`.
 @(clean(123)) → 123
 ```
 
-<a name="function:code"></a>
-
-## code(text)
+<h2 class="item_title"><a name="function:code" href="#function:code">code(text)</a></h2>
 
 Returns the UNICODE code for the first character of `text`.
 
@@ -393,9 +382,21 @@ It is the inverse of [char](expressions.html#function:char).
 @(code("")) → ERROR
 ```
 
-<a name="function:date"></a>
+<h2 class="item_title"><a name="function:count" href="#function:count">count(value)</a></h2>
 
-## date(value)
+Returns the number of items in the given array or properties on an object.
+
+It will return an error if it is passed an item which isn't countable.
+
+
+```objectivec
+@(count(contact.fields)) → 5
+@(count(array())) → 0
+@(count(array("a", "b", "c"))) → 3
+@(count(1234)) → ERROR
+```
+
+<h2 class="item_title"><a name="function:date" href="#function:date">date(value)</a></h2>
 
 Tries to convert `value` to a date.
 
@@ -406,13 +407,11 @@ An error is returned if the value can't be converted.
 ```objectivec
 @(date("1979-07-18")) → 1979-07-18
 @(date("1979-07-18T10:30:45.123456Z")) → 1979-07-18
-@(date("2010 05 10")) → 2010-05-10
+@(date("10/05/2010")) → 2010-05-10
 @(date("NOT DATE")) → ERROR
 ```
 
-<a name="function:date_from_parts"></a>
-
-## date_from_parts(year, month, day)
+<h2 class="item_title"><a name="function:date_from_parts" href="#function:date_from_parts">date_from_parts(year, month, day)</a></h2>
 
 Creates a date from `year`, `month` and `day`.
 
@@ -423,9 +422,7 @@ Creates a date from `year`, `month` and `day`.
 @(date_from_parts(2017, 13, 15)) → ERROR
 ```
 
-<a name="function:datetime"></a>
-
-## datetime(value)
+<h2 class="item_title"><a name="function:datetime" href="#function:datetime">datetime(value)</a></h2>
 
 Tries to convert `value` to a datetime.
 
@@ -436,15 +433,13 @@ and time formats. An error is returned if the value can't be converted.
 ```objectivec
 @(datetime("1979-07-18")) → 1979-07-18T00:00:00.000000-05:00
 @(datetime("1979-07-18T10:30:45.123456Z")) → 1979-07-18T10:30:45.123456Z
-@(datetime("2010 05 10")) → 2010-05-10T00:00:00.000000-05:00
+@(datetime("10/05/2010")) → 2010-05-10T00:00:00.000000-05:00
 @(datetime("NOT DATE")) → ERROR
 ```
 
-<a name="function:datetime_add"></a>
+<h2 class="item_title"><a name="function:datetime_add" href="#function:datetime_add">datetime_add(datetime, offset, unit)</a></h2>
 
-## datetime_add(date, offset, unit)
-
-Calculates the date value arrived at by adding `offset` number of `unit` to the `date`
+Calculates the date value arrived at by adding `offset` number of `unit` to the `datetime`
 
 Valid durations are "Y" for years, "M" for months, "W" for weeks, "D" for days, "h" for hour,
 "m" for minutes, "s" for seconds
@@ -455,9 +450,7 @@ Valid durations are "Y" for years, "M" for months, "W" for weeks, "D" for days, 
 @(datetime_add("2017-01-15 10:45", 30, "m")) → 2017-01-15T11:15:00.000000-05:00
 ```
 
-<a name="function:datetime_diff"></a>
-
-## datetime_diff(date1, date2, unit)
+<h2 class="item_title"><a name="function:datetime_diff" href="#function:datetime_diff">datetime_diff(date1, date2, unit)</a></h2>
 
 Returns the duration between `date1` and `date2` in the `unit` specified.
 
@@ -473,9 +466,7 @@ Valid durations are "Y" for years, "M" for months, "W" for weeks, "D" for days, 
 @(datetime_diff("2017-01-17", "2015-12-17", "Y")) → -2
 ```
 
-<a name="function:datetime_from_epoch"></a>
-
-## datetime_from_epoch(seconds)
+<h2 class="item_title"><a name="function:datetime_from_epoch" href="#function:datetime_from_epoch">datetime_from_epoch(seconds)</a></h2>
 
 Converts the UNIX epoch time `seconds` into a new date.
 
@@ -485,9 +476,7 @@ Converts the UNIX epoch time `seconds` into a new date.
 @(datetime_from_epoch(1497286619.123456)) → 2017-06-12T11:56:59.123456-05:00
 ```
 
-<a name="function:default"></a>
-
-## default(value, default)
+<h2 class="item_title"><a name="function:default" href="#function:default">default(value, default)</a></h2>
 
 Returns `value` if is not empty or an error, otherwise it returns `default`.
 
@@ -496,14 +485,13 @@ Returns `value` if is not empty or an error, otherwise it returns `default`.
 @(default(undeclared.var, "default_value")) → default_value
 @(default("10", "20")) → 10
 @(default("", "value")) → value
-@(default(array(1, 2), "value")) → 1, 2
+@(default(array(1, 2), "value")) → [1, 2]
 @(default(array(), "value")) → value
 @(default(datetime("invalid-date"), "today")) → today
+@(default(format_urn("invalid-urn"), "ok")) → ok
 ```
 
-<a name="function:epoch"></a>
-
-## epoch(date)
+<h2 class="item_title"><a name="function:epoch" href="#function:epoch">epoch(date)</a></h2>
 
 Converts `date` to a UNIX epoch time.
 
@@ -517,9 +505,26 @@ The returned number can contain fractional seconds.
 @(round_down(epoch("2017-06-12T16:56:59.123456Z"))) → 1497286619
 ```
 
-<a name="function:field"></a>
+<h2 class="item_title"><a name="function:extract" href="#function:extract">extract(object, properties)</a></h2>
 
-## field(text, index, delimiter)
+Takes an object and extracts the named property.
+
+
+```objectivec
+@(extract(contact, "name")) → Ryan Lewis
+@(extract(contact.groups[0], "name")) → Testers
+```
+
+<h2 class="item_title"><a name="function:extract_object" href="#function:extract_object">extract_object(object, properties...)</a></h2>
+
+Takes an object and returns a new object by extracting only the named properties.
+
+
+```objectivec
+@(extract_object(contact.groups[0], "name")) → {name: Testers}
+```
+
+<h2 class="item_title"><a name="function:field" href="#function:field">field(text, index, delimiter)</a></h2>
 
 Splits `text` using the given `delimiter` and returns the field at `index`.
 
@@ -535,15 +540,48 @@ The index starts at zero. When splitting with a space, the delimiter is consider
 @(field("a,b,c", "foo", ",")) → ERROR
 ```
 
-<a name="function:format_date"></a>
+<h2 class="item_title"><a name="function:foreach" href="#function:foreach">foreach(values, func, [args...])</a></h2>
 
-## format_date(date, [,format])
+Creates a new array by applying `func` to each value in `values`.
 
-Formats `date` as text according to the given `format`. If `format` is not
-specified then the environment's default format is used.
+If the given function takes more than one argument, you can pass additional arguments after the function.
 
-The format string can consist of the following characters. The characters
-' ', ':', ',', 'T', '-' and '_' are ignored. Any other character is an error.
+
+```objectivec
+@(foreach(array("a", "b", "c"), upper)) → [A, B, C]
+@(foreach(array("the man", "fox", "jumped up"), word, 0)) → [the, fox, jumped]
+```
+
+<h2 class="item_title"><a name="function:foreach_value" href="#function:foreach_value">foreach_value(object, func, [args...])</a></h2>
+
+Creates a new object by applying `func` to each property value of `object`.
+
+If the given function takes more than one argument, you can pass additional arguments after the function.
+
+
+```objectivec
+@(foreach_value(object("a", "x", "b", "y"), upper)) → {a: X, b: Y}
+@(foreach_value(object("a", "hi there", "b", "good bye"), word, 1)) → {a: there, b: bye}
+```
+
+<h2 class="item_title"><a name="function:format" href="#function:format">format(value)</a></h2>
+
+Formats `value` according to its type.
+
+
+```objectivec
+@(format(1234.5670)) → 1,234.567
+@(format(now())) → 11-04-2018 13:24
+@(format(today())) → 11-04-2018
+```
+
+<h2 class="item_title"><a name="function:format_date" href="#function:format_date">format_date(date, [,format])</a></h2>
+
+Formats `date` as text according to the given `format`.
+
+If `format` is not specified then the environment's default format is used. The format
+string can consist of the following characters. The characters ' ', ':', ',', 'T', '-'
+and '_' are ignored. Any other character is an error.
 
 * `YY`        - last two digits of year 0-99
 * `YYYY`      - four digits of year 0000-9999
@@ -554,7 +592,7 @@ The format string can consist of the following characters. The characters
 
 
 ```objectivec
-@(format_date("1979-07-18T15:00:00.000000Z")) → 1979-07-18
+@(format_date("1979-07-18T15:00:00.000000Z")) → 18-07-1979
 @(format_date("1979-07-18T15:00:00.000000Z", "YYYY-MM-DD")) → 1979-07-18
 @(format_date("2010-05-10T19:50:00.000000Z", "YYYY M DD")) → 2010 5 10
 @(format_date("1979-07-18T15:00:00.000000Z", "YYYY")) → 1979
@@ -562,15 +600,13 @@ The format string can consist of the following characters. The characters
 @(format_date("NOT DATE", "YYYY-MM-DD")) → ERROR
 ```
 
-<a name="function:format_datetime"></a>
+<h2 class="item_title"><a name="function:format_datetime" href="#function:format_datetime">format_datetime(datetime [,format [,timezone]])</a></h2>
 
-## format_datetime(date [,format [,timezone]])
+Formats `datetime` as text according to the given `format`.
 
-Formats `date` as text according to the given `format`. If `format` is not
-specified then the environment's default format is used.
-
-The format string can consist of the following characters. The characters
-' ', ':', ',', 'T', '-' and '_' are ignored. Any other character is an error.
+If `format` is not specified then the environment's default format is used. The format
+string can consist of the following characters. The characters ' ', ':', ',', 'T', '-'
+and '_' are ignored. Any other character is an error.
 
 * `YY`        - last two digits of year 0-99
 * `YYYY`      - four digits of year 0000-9999
@@ -599,18 +635,16 @@ will be used. An error will be returned if the timezone is not recognized.
 
 
 ```objectivec
-@(format_datetime("1979-07-18T15:00:00.000000Z")) → 1979-07-18 10:00
+@(format_datetime("1979-07-18T15:00:00.000000Z")) → 18-07-1979 10:00
 @(format_datetime("1979-07-18T15:00:00.000000Z", "YYYY-MM-DD")) → 1979-07-18
 @(format_datetime("2010-05-10T19:50:00.000000Z", "YYYY M DD tt:mm")) → 2010 5 10 14:50
-@(format_datetime("2010-05-10T19:50:00.000000Z", "YYYY-MM-DD tt:mm AA", "America/Los_Angeles")) → 2010-05-10 12:50 PM
+@(format_datetime("2010-05-10T19:50:00.000000Z", "YYYY-MM-DD hh:mm AA", "America/Los_Angeles")) → 2010-05-10 12:50 PM
 @(format_datetime("1979-07-18T15:00:00.000000Z", "YYYY")) → 1979
 @(format_datetime("1979-07-18T15:00:00.000000Z", "M")) → 7
 @(format_datetime("NOT DATE", "YYYY-MM-DD")) → ERROR
 ```
 
-<a name="function:format_location"></a>
-
-## format_location(location)
+<h2 class="item_title"><a name="function:format_location" href="#function:format_location">format_location(location)</a></h2>
 
 Formats the given `location` as its name.
 
@@ -620,9 +654,7 @@ Formats the given `location` as its name.
 @(format_location("Rwanda > Kigali")) → Kigali
 ```
 
-<a name="function:format_number"></a>
-
-## format_number(number, places [, humanize])
+<h2 class="item_title"><a name="function:format_number" href="#function:format_number">format_number(number, places [, humanize])</a></h2>
 
 Formats `number` to the given number of decimal `places`.
 
@@ -630,22 +662,20 @@ An optional third argument `humanize` can be false to disable the use of thousan
 
 
 ```objectivec
-@(format_number(31337)) → 31,337.00
-@(format_number(31337, 2)) → 31,337.00
-@(format_number(31337, 2, true)) → 31,337.00
-@(format_number(31337, 0, false)) → 31337
+@(format_number(1234)) → 1,234
+@(format_number(1234.5670)) → 1,234.567
+@(format_number(1234.5670, 2, true)) → 1,234.57
+@(format_number(1234.5678, 0, false)) → 1235
 @(format_number("foo", 2, false)) → ERROR
 ```
 
-<a name="function:format_time"></a>
+<h2 class="item_title"><a name="function:format_time" href="#function:format_time">format_time(time [,format])</a></h2>
 
-## format_time(time [,format])
+Formats `time` as text according to the given `format`.
 
-Formats `time` as text according to the given `format`. If `format` is not
-specified then the environment's default format is used.
-
-The format string can consist of the following characters. The characters
-' ', ':', ',', 'T', '-' and '_' are ignored. Any other character is an error.
+If `format` is not specified then the environment's default format is used. The format
+string can consist of the following characters. The characters ' ', ':', ',', 'T', '-'
+and '_' are ignored. Any other character is an error.
 
 * `h`         - hour of the day 1-12
 * `hh`        - hour of the day 01-12
@@ -662,16 +692,13 @@ The format string can consist of the following characters. The characters
 
 
 ```objectivec
-@(format_time("14:50:30.000000")) → 02:50
+@(format_time("14:50:30.000000")) → 14:50
 @(format_time("14:50:30.000000", "h:mm aa")) → 2:50 pm
-@(format_time("14:50:30.000000", "tt:mm")) → 14:50
 @(format_time("15:00:27.000000", "s")) → 27
 @(format_time("NOT TIME", "hh:mm")) → ERROR
 ```
 
-<a name="function:format_urn"></a>
-
-## format_urn(urn)
+<h2 class="item_title"><a name="function:format_urn" href="#function:format_urn">format_urn(urn)</a></h2>
 
 Formats `urn` into human friendly text.
 
@@ -680,15 +707,12 @@ Formats `urn` into human friendly text.
 @(format_urn("tel:+250781234567")) → 0781 234 567
 @(format_urn("twitter:134252511151#billy_bob")) → billy_bob
 @(format_urn(contact.urn)) → (206) 555-1212
-@(format_urn(contact.urns.mailto[0])) → foo@bar.com
-@(format_urn(contact.urns.telegram[0])) →
-@(format_urn(contact.urns[2])) → foo@bar.com
+@(format_urn(urns.tel)) → (206) 555-1212
+@(format_urn(urns.mailto)) → foo@bar.com
 @(format_urn("NOT URN")) → ERROR
 ```
 
-<a name="function:if"></a>
-
-## if(test, value1, value2)
+<h2 class="item_title"><a name="function:if" href="#function:if">if(test, value1, value2)</a></h2>
 
 Returns `value1` if `test` is truthy or `value2` if not.
 
@@ -700,9 +724,18 @@ If the first argument is an error that error is returned.
 @(if("foo" > "bar", "foo", "bar")) → ERROR
 ```
 
-<a name="function:join"></a>
+<h2 class="item_title"><a name="function:is_error" href="#function:is_error">is_error(value)</a></h2>
 
-## join(array, separator)
+Returns whether `value` is an error
+
+
+```objectivec
+@(is_error(datetime("foo"))) → true
+@(is_error(run.not.existing)) → true
+@(is_error("hello")) → false
+```
+
+<h2 class="item_title"><a name="function:join" href="#function:join">join(array, separator)</a></h2>
 
 Joins the given `array` of strings with `separator` to make text.
 
@@ -712,9 +745,7 @@ Joins the given `array` of strings with `separator` to make text.
 @(join(split("a.b.c", "."), " ")) → a b c
 ```
 
-<a name="function:json"></a>
-
-## json(value)
+<h2 class="item_title"><a name="function:json" href="#function:json">json(value)</a></h2>
 
 Returns the JSON representation of `value`.
 
@@ -722,44 +753,11 @@ Returns the JSON representation of `value`.
 ```objectivec
 @(json("string")) → "string"
 @(json(10)) → 10
+@(json(null)) → null
 @(json(contact.uuid)) → "5d76d86b-3bb9-4d5a-b822-c9d86f5d8e4f"
 ```
 
-<a name="function:left"></a>
-
-## left(text, count)
-
-Returns the `count` left-most characters in `text`
-
-
-```objectivec
-@(left("hello", 2)) → he
-@(left("hello", 7)) → hello
-@(left("😀😃😄😁", 2)) → 😀😃
-@(left("hello", -1)) → ERROR
-```
-
-<a name="function:length"></a>
-
-## length(value)
-
-Returns the length of the passed in text or array.
-
-length will return an error if it is passed an item which doesn't have length.
-
-
-```objectivec
-@(length("Hello")) → 5
-@(length(contact.fields.gender)) → 4
-@(length("😀😃😄😁")) → 4
-@(length(array())) → 0
-@(length(array("a", "b", "c"))) → 3
-@(length(1234)) → ERROR
-```
-
-<a name="function:lower"></a>
-
-## lower(text)
+<h2 class="item_title"><a name="function:lower" href="#function:lower">lower(text)</a></h2>
 
 Converts `text` to lowercase.
 
@@ -771,11 +769,9 @@ Converts `text` to lowercase.
 @(lower("😀")) → 😀
 ```
 
-<a name="function:max"></a>
+<h2 class="item_title"><a name="function:max" href="#function:max">max(numbers...)</a></h2>
 
-## max(values...)
-
-Returns the maximum value in `values`.
+Returns the maximum value in `numbers`.
 
 
 ```objectivec
@@ -784,11 +780,9 @@ Returns the maximum value in `values`.
 @(max(1, 10, "foo")) → ERROR
 ```
 
-<a name="function:mean"></a>
+<h2 class="item_title"><a name="function:mean" href="#function:mean">mean(numbers...)</a></h2>
 
-## mean(values)
-
-Returns the arithmetic mean of the numbers in `values`.
+Returns the arithmetic mean of `numbers`.
 
 
 ```objectivec
@@ -797,11 +791,9 @@ Returns the arithmetic mean of the numbers in `values`.
 @(mean(1, "foo")) → ERROR
 ```
 
-<a name="function:min"></a>
+<h2 class="item_title"><a name="function:min" href="#function:min">min(numbers...)</a></h2>
 
-## min(values)
-
-Returns the minimum value in `values`.
+Returns the minimum value in `numbers`.
 
 
 ```objectivec
@@ -810,9 +802,7 @@ Returns the minimum value in `values`.
 @(min(1, 2, "foo")) → ERROR
 ```
 
-<a name="function:mod"></a>
-
-## mod(dividend, divisor)
+<h2 class="item_title"><a name="function:mod" href="#function:mod">mod(dividend, divisor)</a></h2>
 
 Returns the remainder of the division of `dividend` by `divisor`.
 
@@ -823,9 +813,7 @@ Returns the remainder of the division of `dividend` by `divisor`.
 @(mod(5, "foo")) → ERROR
 ```
 
-<a name="function:now"></a>
-
-## now()
+<h2 class="item_title"><a name="function:now" href="#function:now">now()</a></h2>
 
 Returns the current date and time in the current timezone.
 
@@ -834,9 +822,7 @@ Returns the current date and time in the current timezone.
 @(now()) → 2018-04-11T13:24:30.123456-05:00
 ```
 
-<a name="function:number"></a>
-
-## number(value)
+<h2 class="item_title"><a name="function:number" href="#function:number">number(value)</a></h2>
 
 Tries to convert `value` to a number.
 
@@ -849,9 +835,18 @@ An error is returned if the value can't be converted.
 @(number("what?")) → ERROR
 ```
 
-<a name="function:or"></a>
+<h2 class="item_title"><a name="function:object" href="#function:object">object(pairs...)</a></h2>
 
-## or(values...)
+Takes property name value pairs and returns them as a new object.
+
+
+```objectivec
+@(object()) → {}
+@(object("a", 123, "b", "hello")) → {a: 123, b: hello}
+@(object("a")) → ERROR
+```
+
+<h2 class="item_title"><a name="function:or" href="#function:or">or(values...)</a></h2>
 
 Returns whether if any of the given `values` are truthy.
 
@@ -861,9 +856,7 @@ Returns whether if any of the given `values` are truthy.
 @(or(true, false, true)) → true
 ```
 
-<a name="function:parse_datetime"></a>
-
-## parse_datetime(text, format [,timezone])
+<h2 class="item_title"><a name="function:parse_datetime" href="#function:parse_datetime">parse_datetime(text, format [,timezone])</a></h2>
 
 Parses `text` into a date using the given `format`.
 
@@ -909,9 +902,7 @@ parse_datetime will return an error if it is unable to convert the text to a dat
 @(parse_datetime("NOT DATE", "YYYY-MM-DD")) → ERROR
 ```
 
-<a name="function:parse_json"></a>
-
-## parse_json(text)
+<h2 class="item_title"><a name="function:parse_json" href="#function:parse_json">parse_json(text)</a></h2>
 
 Tries to parse `text` as JSON.
 
@@ -924,9 +915,7 @@ If the given `text` is not valid JSON, then an error is returned
 @(parse_json("invalid json")) → ERROR
 ```
 
-<a name="function:parse_time"></a>
-
-## parse_time(text, format)
+<h2 class="item_title"><a name="function:parse_time" href="#function:parse_time">parse_time(text, format)</a></h2>
 
 Parses `text` into a time using the given `format`.
 
@@ -959,11 +948,9 @@ parse_time will return an error if it is unable to convert the text to a time.
 @(parse_time("NOT TIME", "tt:mm")) → ERROR
 ```
 
-<a name="function:percent"></a>
+<h2 class="item_title"><a name="function:percent" href="#function:percent">percent(number)</a></h2>
 
-## percent(num)
-
-Formats `num` as a percentage.
+Formats `number` as a percentage.
 
 
 ```objectivec
@@ -972,9 +959,7 @@ Formats `num` as a percentage.
 @(percent("foo")) → ERROR
 ```
 
-<a name="function:rand"></a>
-
-## rand()
+<h2 class="item_title"><a name="function:rand" href="#function:rand">rand()</a></h2>
 
 Returns a single random number between [0.0-1.0).
 
@@ -984,9 +969,7 @@ Returns a single random number between [0.0-1.0).
 @(rand()) → 0.607552015674623913099594574305228888988494873046875
 ```
 
-<a name="function:rand_between"></a>
-
-## rand_between()
+<h2 class="item_title"><a name="function:rand_between" href="#function:rand_between">rand_between()</a></h2>
 
 A single random integer in the given inclusive range.
 
@@ -996,9 +979,7 @@ A single random integer in the given inclusive range.
 @(rand_between(1, 10)) → 10
 ```
 
-<a name="function:read_chars"></a>
-
-## read_chars(text)
+<h2 class="item_title"><a name="function:read_chars" href="#function:read_chars">read_chars(text)</a></h2>
 
 Converts `text` into something that can be read by IVR systems.
 
@@ -1012,9 +993,7 @@ splitting in 3s or 4s if appropriate.
 @(read_chars("abcdef")) → a b c , d e f
 ```
 
-<a name="function:regex_match"></a>
-
-## regex_match(text, pattern [,group])
+<h2 class="item_title"><a name="function:regex_match" href="#function:regex_match">regex_match(text, pattern [,group])</a></h2>
 
 Returns the first match of the regular expression `pattern` in `text`.
 
@@ -1029,9 +1008,7 @@ An optional third parameter `group` determines which matching group will be retu
 @(regex_match("abc", "[\.")) → ERROR
 ```
 
-<a name="function:remove_first_word"></a>
-
-## remove_first_word(text)
+<h2 class="item_title"><a name="function:remove_first_word" href="#function:remove_first_word">remove_first_word(text)</a></h2>
 
 Removes the first word of `text`.
 
@@ -1041,9 +1018,7 @@ Removes the first word of `text`.
 @(remove_first_word("Hi there. I'm a flow!")) → there. I'm a flow!
 ```
 
-<a name="function:repeat"></a>
-
-## repeat(text, count)
+<h2 class="item_title"><a name="function:repeat" href="#function:repeat">repeat(text, count)</a></h2>
 
 Returns `text` repeated `count` number of times.
 
@@ -1053,23 +1028,22 @@ Returns `text` repeated `count` number of times.
 @(repeat("*", "foo")) → ERROR
 ```
 
-<a name="function:replace"></a>
+<h2 class="item_title"><a name="function:replace" href="#function:replace">replace(text, needle, replacement [, count])</a></h2>
 
-## replace(text, needle, replacement)
+Replaces up to `count` occurrences of `needle` with `replacement` in `text`.
 
-Replaces all occurrences of `needle` with `replacement` in `text`.
+If `count` is omitted or is less than 0 then all occurrences are replaced.
 
 
 ```objectivec
-@(replace("foo bar", "foo", "zap")) → zap bar
+@(replace("foo bar foo", "foo", "zap")) → zap bar zap
+@(replace("foo bar foo", "foo", "zap", 1)) → zap bar foo
 @(replace("foo bar", "baz", "zap")) → foo bar
 ```
 
-<a name="function:replace_time"></a>
+<h2 class="item_title"><a name="function:replace_time" href="#function:replace_time">replace_time(datetime)</a></h2>
 
-## replace_time(date)
-
-Returns the a new date time with the time part replaced by the `time`.
+Returns a new datetime with the time part replaced by the `time`.
 
 
 ```objectivec
@@ -1078,25 +1052,9 @@ Returns the a new date time with the time part replaced by the `time`.
 @(replace_time("foo", "10:30")) → ERROR
 ```
 
-<a name="function:right"></a>
+<h2 class="item_title"><a name="function:round" href="#function:round">round(number [,places])</a></h2>
 
-## right(text, count)
-
-Returns the `count` right-most characters in `text`
-
-
-```objectivec
-@(right("hello", 2)) → lo
-@(right("hello", 7)) → hello
-@(right("😀😃😄😁", 2)) → 😄😁
-@(right("hello", -1)) → ERROR
-```
-
-<a name="function:round"></a>
-
-## round(num [,places])
-
-Rounds `num` to the nearest value.
+Rounds `number` to the nearest value.
 
 You can optionally pass in the number of decimal places to round to as `places`. If `places` < 0,
 it will round the integer part to the nearest 10^(-places).
@@ -1112,11 +1070,9 @@ it will round the integer part to the nearest 10^(-places).
 @(round("notnum", 2)) → ERROR
 ```
 
-<a name="function:round_down"></a>
+<h2 class="item_title"><a name="function:round_down" href="#function:round_down">round_down(number [,places])</a></h2>
 
-## round_down(num [,places])
-
-Rounds `num` down to the nearest integer value.
+Rounds `number` down to the nearest integer value.
 
 You can optionally pass in the number of decimal places to round to as `places`.
 
@@ -1130,11 +1086,9 @@ You can optionally pass in the number of decimal places to round to as `places`.
 @(round_down("foo")) → ERROR
 ```
 
-<a name="function:round_up"></a>
+<h2 class="item_title"><a name="function:round_up" href="#function:round_up">round_up(number [,places])</a></h2>
 
-## round_up(num [,places])
-
-Rounds `num` up to the nearest integer value.
+Rounds `number` up to the nearest integer value.
 
 You can optionally pass in the number of decimal places to round to as `places`.
 
@@ -1148,9 +1102,7 @@ You can optionally pass in the number of decimal places to round to as `places`.
 @(round_up("foo")) → ERROR
 ```
 
-<a name="function:split"></a>
-
-## split(text, delimiters)
+<h2 class="item_title"><a name="function:split" href="#function:split">split(text, delimiters)</a></h2>
 
 Splits `text` based on the given characters in `delimiters`.
 
@@ -1158,16 +1110,14 @@ Empty values are removed from the returned list.
 
 
 ```objectivec
-@(split("a b c", " ")) → a, b, c
-@(split("a", " ")) → a
-@(split("abc..d", ".")) → abc, d
-@(split("a.b.c.", ".")) → a, b, c
-@(split("a|b,c  d", " .|,")) → a, b, c, d
+@(split("a b c", " ")) → [a, b, c]
+@(split("a", " ")) → [a]
+@(split("abc..d", ".")) → [abc, d]
+@(split("a.b.c.", ".")) → [a, b, c]
+@(split("a|b,c  d", " .|,")) → [a, b, c, d]
 ```
 
-<a name="function:text"></a>
-
-## text(value)
+<h2 class="item_title"><a name="function:text" href="#function:text">text(value)</a></h2>
 
 Tries to convert `value` to text.
 
@@ -1180,9 +1130,7 @@ An error is returned if the value can't be converted.
 @(text(1 / 0)) → ERROR
 ```
 
-<a name="function:text_compare"></a>
-
-## text_compare(text1, text2)
+<h2 class="item_title"><a name="function:text_compare" href="#function:text_compare">text_compare(text1, text2)</a></h2>
 
 Returns the dictionary order of `text1` and `text2`.
 
@@ -1196,9 +1144,32 @@ and 1 if `text1` comes after `text2`.
 @(text_compare("zzz", "aaa")) → 1
 ```
 
-<a name="function:time"></a>
+<h2 class="item_title"><a name="function:text_length" href="#function:text_length">text_length(value)</a></h2>
 
-## time(value)
+Returns the length (number of characters) of `value` when converted to text.
+
+
+```objectivec
+@(text_length("abc")) → 3
+@(text_length(array(2, 3))) → 6
+```
+
+<h2 class="item_title"><a name="function:text_slice" href="#function:text_slice">text_slice(text, start [, end])</a></h2>
+
+Returns the portion of `text` between `start` (inclusive) and `end` (exclusive).
+
+If `end` is not specified then the entire rest of `text` will be included. Negative values
+for `start` or `end` start at the end of `text`.
+
+
+```objectivec
+@(text_slice("hello", 2)) → llo
+@(text_slice("hello", 1, 3)) → el
+@(text_slice("hello😁", -3, -1)) → lo
+@(text_slice("hello", 7)) →
+```
+
+<h2 class="item_title"><a name="function:time" href="#function:time">time(value)</a></h2>
 
 Tries to convert `value` to a time.
 
@@ -1213,9 +1184,7 @@ An error is returned if the value can't be converted.
 @(time("what?")) → ERROR
 ```
 
-<a name="function:time_from_parts"></a>
-
-## time_from_parts(hour, minute, second)
+<h2 class="item_title"><a name="function:time_from_parts" href="#function:time_from_parts">time_from_parts(hour, minute, second)</a></h2>
 
 Creates a time from `hour`, `minute` and `second`
 
@@ -1226,9 +1195,7 @@ Creates a time from `hour`, `minute` and `second`
 @(time_from_parts(25, 0, 0)) → ERROR
 ```
 
-<a name="function:title"></a>
-
-## title(text)
+<h2 class="item_title"><a name="function:title" href="#function:title">title(text)</a></h2>
 
 Capitalizes each word in `text`.
 
@@ -1240,9 +1207,7 @@ Capitalizes each word in `text`.
 @(title(123)) → 123
 ```
 
-<a name="function:today"></a>
-
-## today()
+<h2 class="item_title"><a name="function:today" href="#function:today">today()</a></h2>
 
 Returns the current date in the environment timezone.
 
@@ -1251,9 +1216,7 @@ Returns the current date in the environment timezone.
 @(today()) → 2018-04-11
 ```
 
-<a name="function:tz"></a>
-
-## tz(date)
+<h2 class="item_title"><a name="function:tz" href="#function:tz">tz(date)</a></h2>
 
 Returns the name of the timezone of `date`.
 
@@ -1267,9 +1230,7 @@ If no timezone information is present in the date, then the current timezone wil
 @(tz("foo")) → ERROR
 ```
 
-<a name="function:tz_offset"></a>
-
-## tz_offset(date)
+<h2 class="item_title"><a name="function:tz_offset" href="#function:tz_offset">tz_offset(date)</a></h2>
 
 Returns the offset of the timezone of `date`.
 
@@ -1284,11 +1245,9 @@ then the current timezone offset will be returned.
 @(tz_offset("foo")) → ERROR
 ```
 
-<a name="function:upper"></a>
+<h2 class="item_title"><a name="function:upper" href="#function:upper">upper(text)</a></h2>
 
-## upper(text)
-
-Converts `text` to lowercase.
+Converts `text` to uppercase.
 
 
 ```objectivec
@@ -1296,9 +1255,7 @@ Converts `text` to lowercase.
 @(upper(123)) → 123
 ```
 
-<a name="function:url_encode"></a>
-
-## url_encode(text)
+<h2 class="item_title"><a name="function:url_encode" href="#function:url_encode">url_encode(text)</a></h2>
 
 Encodes `text` for use as a URL parameter.
 
@@ -1308,9 +1265,31 @@ Encodes `text` for use as a URL parameter.
 @(url_encode(10)) → 10
 ```
 
-<a name="function:weekday"></a>
+<h2 class="item_title"><a name="function:urn_parts" href="#function:urn_parts">urn_parts(urn)</a></h2>
 
-## weekday(date)
+Parses a URN into its different parts
+
+
+```objectivec
+@(urn_parts("tel:+593979012345")) → {display: , path: +593979012345, scheme: tel}
+@(urn_parts("twitterid:3263621177#bobby")) → {display: bobby, path: 3263621177, scheme: twitterid}
+@(urn_parts("not a urn")) → ERROR
+```
+
+<h2 class="item_title"><a name="function:week_number" href="#function:week_number">week_number(date)</a></h2>
+
+Returns the week number (1-54) of `date`.
+
+The week is considered to start on Sunday and week containing Jan 1st is week number 1.
+
+
+```objectivec
+@(week_number("2019-01-01")) → 1
+@(week_number("2019-07-23T16:56:59.000000Z")) → 30
+@(week_number("xx")) → ERROR
+```
+
+<h2 class="item_title"><a name="function:weekday" href="#function:weekday">weekday(date)</a></h2>
 
 Returns the day of the week for `date`.
 
@@ -1322,9 +1301,7 @@ The week is considered to start on Sunday so a Sunday returns 0, a Monday return
 @(weekday("foo")) → ERROR
 ```
 
-<a name="function:word"></a>
-
-## word(text, index [,delimiters])
+<h2 class="item_title"><a name="function:word" href="#function:word">word(text, index [,delimiters])</a></h2>
 
 Returns the word at `index` in `text`.
 
@@ -1343,9 +1320,7 @@ is string of characters used to split the text into words.
 @(word("O'Grady O'Flaggerty", 1, " ")) → O'Flaggerty
 ```
 
-<a name="function:word_count"></a>
-
-## word_count(text [,delimiters])
+<h2 class="item_title"><a name="function:word_count" href="#function:word_count">word_count(text [,delimiters])</a></h2>
 
 Returns the number of words in `text`.
 
@@ -1362,9 +1337,7 @@ to split the text into words.
 @(word_count("O'Grady O'Flaggerty", " ")) → 2
 ```
 
-<a name="function:word_slice"></a>
-
-## word_slice(text, start, end [,delimiters])
+<h2 class="item_title"><a name="function:word_slice" href="#function:word_slice">word_slice(text, start, end [,delimiters])</a></h2>
 
 Extracts a sub-sequence of words from `text`.
 
@@ -1382,462 +1355,6 @@ which is string of characters used to split the text into words.
 @(word_slice("bee cat dog", 3, 10)) →
 @(word_slice("bee.*cat,dog", 1, -1, ".*=|,")) → cat dog
 @(word_slice("O'Grady O'Flaggerty", 1, 2, " ")) → O'Flaggerty
-```
-
-
-</div>
-
-# Router Tests
-
-Router tests are a special class of functions which are used within the switch router. They are called in the same way as normal functions, but 
-all return a test result object which by default evalutes to true or false, but can also be used to find the matching portion of the test by using
-the `match` component of the result. The flow editor builds these expressions using UI widgets, but they can be used anywhere a normal template
-function is used.
-
-<div class="tests">
-<a name="test:has_all_words"></a>
-
-## has_all_words(text, words)
-
-Tests whether all the `words` are contained in `text`
-
-The words can be in any order and may appear more than once.
-
-
-```objectivec
-@(has_all_words("the quick brown FOX", "the fox")) → true
-@(has_all_words("the quick brown FOX", "the fox").match) → the FOX
-@(has_all_words("the quick brown fox", "red fox")) → false
-```
-
-<a name="test:has_any_word"></a>
-
-## has_any_word(text, words)
-
-Tests whether any of the `words` are contained in the `text`
-
-Only one of the words needs to match and it may appear more than once.
-
-
-```objectivec
-@(has_any_word("The Quick Brown Fox", "fox quick")) → true
-@(has_any_word("The Quick Brown Fox", "red fox")) → true
-@(has_any_word("The Quick Brown Fox", "red fox").match) → Fox
-```
-
-<a name="test:has_beginning"></a>
-
-## has_beginning(text, beginning)
-
-Tests whether `text` starts with `beginning`
-
-Both text values are trimmed of surrounding whitespace, but otherwise matching is strict
-without any tokenization.
-
-
-```objectivec
-@(has_beginning("The Quick Brown", "the quick")) → true
-@(has_beginning("The Quick Brown", "the quick").match) → The Quick
-@(has_beginning("The Quick Brown", "the   quick")) → false
-@(has_beginning("The Quick Brown", "quick brown")) → false
-```
-
-<a name="test:has_date"></a>
-
-## has_date(text)
-
-Tests whether `text` contains a date formatted according to our environment
-
-
-```objectivec
-@(has_date("the date is 2017-01-15")) → true
-@(has_date("the date is 2017-01-15").match) → 2017-01-15T13:24:30.123456-05:00
-@(has_date("there is no date here, just a year 2017")) → false
-```
-
-<a name="test:has_date_eq"></a>
-
-## has_date_eq(text, date)
-
-Tests whether `text` a date equal to `date`
-
-
-```objectivec
-@(has_date_eq("the date is 2017-01-15", "2017-01-15")) → true
-@(has_date_eq("the date is 2017-01-15", "2017-01-15").match) → 2017-01-15T13:24:30.123456-05:00
-@(has_date_eq("the date is 2017-01-15 15:00", "2017-01-15")) → true
-@(has_date_eq("there is no date here, just a year 2017", "2017-06-01")) → false
-@(has_date_eq("there is no date here, just a year 2017", "not date")) → ERROR
-```
-
-<a name="test:has_date_gt"></a>
-
-## has_date_gt(text, min)
-
-Tests whether `text` a date after the date `min`
-
-
-```objectivec
-@(has_date_gt("the date is 2017-01-15", "2017-01-01")) → true
-@(has_date_gt("the date is 2017-01-15", "2017-01-01").match) → 2017-01-15T13:24:30.123456-05:00
-@(has_date_gt("the date is 2017-01-15", "2017-03-15")) → false
-@(has_date_gt("there is no date here, just a year 2017", "2017-06-01")) → false
-@(has_date_gt("there is no date here, just a year 2017", "not date")) → ERROR
-```
-
-<a name="test:has_date_lt"></a>
-
-## has_date_lt(text, max)
-
-Tests whether `text` contains a date before the date `max`
-
-
-```objectivec
-@(has_date_lt("the date is 2017-01-15", "2017-06-01")) → true
-@(has_date_lt("the date is 2017-01-15", "2017-06-01").match) → 2017-01-15T13:24:30.123456-05:00
-@(has_date_lt("there is no date here, just a year 2017", "2017-06-01")) → false
-@(has_date_lt("there is no date here, just a year 2017", "not date")) → ERROR
-```
-
-<a name="test:has_district"></a>
-
-## has_district(text, state)
-
-Tests whether a district name is contained in the `text`. If `state` is also provided
-then the returned district must be within that state.
-
-
-```objectivec
-@(has_district("Gasabo", "Kigali")) → true
-@(has_district("I live in Gasabo", "Kigali")) → true
-@(has_district("I live in Gasabo", "Kigali").match) → Rwanda > Kigali City > Gasabo
-@(has_district("Gasabo", "Boston")) → false
-@(has_district("Gasabo")) → true
-```
-
-<a name="test:has_email"></a>
-
-## has_email(text)
-
-Tests whether an email is contained in `text`
-
-
-```objectivec
-@(has_email("my email is foo1@bar.com, please respond")) → true
-@(has_email("my email is foo1@bar.com, please respond").match) → foo1@bar.com
-@(has_email("my email is <foo@bar2.com>")) → true
-@(has_email("i'm not sharing my email")) → false
-```
-
-<a name="test:has_group"></a>
-
-## has_group(contact, group_uuid)
-
-Returns whether the `contact` is part of group with the passed in UUID
-
-
-```objectivec
-@(has_group(contact, "b7cf0d83-f1c9-411c-96fd-c511a4cfa86d")) → true
-@(has_group(contact, "b7cf0d83-f1c9-411c-96fd-c511a4cfa86d").match) → Testers
-@(has_group(contact, "97fe7029-3a15-4005-b0c7-277b884fc1d5")) → false
-```
-
-<a name="test:has_number"></a>
-
-## has_number(text)
-
-Tests whether `text` contains a number
-
-
-```objectivec
-@(has_number("the number is 42")) → true
-@(has_number("the number is 42").match) → 42
-@(has_number("the number is forty two")) → false
-```
-
-<a name="test:has_number_between"></a>
-
-## has_number_between(text, min, max)
-
-Tests whether `text` contains a number between `min` and `max` inclusive
-
-
-```objectivec
-@(has_number_between("the number is 42", 40, 44)) → true
-@(has_number_between("the number is 42", 40, 44).match) → 42
-@(has_number_between("the number is 42", 50, 60)) → false
-@(has_number_between("the number is not there", 50, 60)) → false
-@(has_number_between("the number is not there", "foo", 60)) → ERROR
-```
-
-<a name="test:has_number_eq"></a>
-
-## has_number_eq(text, value)
-
-Tests whether `text` contains a number equal to the `value`
-
-
-```objectivec
-@(has_number_eq("the number is 42", 42)) → true
-@(has_number_eq("the number is 42", 42).match) → 42
-@(has_number_eq("the number is 42", 40)) → false
-@(has_number_eq("the number is not there", 40)) → false
-@(has_number_eq("the number is not there", "foo")) → ERROR
-```
-
-<a name="test:has_number_gt"></a>
-
-## has_number_gt(text, min)
-
-Tests whether `text` contains a number greater than `min`
-
-
-```objectivec
-@(has_number_gt("the number is 42", 40)) → true
-@(has_number_gt("the number is 42", 40).match) → 42
-@(has_number_gt("the number is 42", 42)) → false
-@(has_number_gt("the number is not there", 40)) → false
-@(has_number_gt("the number is not there", "foo")) → ERROR
-```
-
-<a name="test:has_number_gte"></a>
-
-## has_number_gte(text, min)
-
-Tests whether `text` contains a number greater than or equal to `min`
-
-
-```objectivec
-@(has_number_gte("the number is 42", 42)) → true
-@(has_number_gte("the number is 42", 42).match) → 42
-@(has_number_gte("the number is 42", 45)) → false
-@(has_number_gte("the number is not there", 40)) → false
-@(has_number_gte("the number is not there", "foo")) → ERROR
-```
-
-<a name="test:has_number_lt"></a>
-
-## has_number_lt(text, max)
-
-Tests whether `text` contains a number less than `max`
-
-
-```objectivec
-@(has_number_lt("the number is 42", 44)) → true
-@(has_number_lt("the number is 42", 44).match) → 42
-@(has_number_lt("the number is 42", 40)) → false
-@(has_number_lt("the number is not there", 40)) → false
-@(has_number_lt("the number is not there", "foo")) → ERROR
-```
-
-<a name="test:has_number_lte"></a>
-
-## has_number_lte(text, max)
-
-Tests whether `text` contains a number less than or equal to `max`
-
-
-```objectivec
-@(has_number_lte("the number is 42", 42)) → true
-@(has_number_lte("the number is 42", 44).match) → 42
-@(has_number_lte("the number is 42", 40)) → false
-@(has_number_lte("the number is not there", 40)) → false
-@(has_number_lte("the number is not there", "foo")) → ERROR
-```
-
-<a name="test:has_only_phrase"></a>
-
-## has_only_phrase(text, phrase)
-
-Tests whether the `text` contains only `phrase`
-
-The phrase must be the only text in the text to match
-
-
-```objectivec
-@(has_only_phrase("The Quick Brown Fox", "quick brown")) → false
-@(has_only_phrase("Quick Brown", "quick brown")) → true
-@(has_only_phrase("the Quick Brown fox", "")) → false
-@(has_only_phrase("", "")) → true
-@(has_only_phrase("Quick Brown", "quick brown").match) → Quick Brown
-@(has_only_phrase("The Quick Brown Fox", "red fox")) → false
-```
-
-<a name="test:has_pattern"></a>
-
-## has_pattern(text, pattern)
-
-Tests whether `text` matches the regex `pattern`
-
-Both text values are trimmed of surrounding whitespace and matching is case-insensitive.
-
-
-```objectivec
-@(has_pattern("Sell cheese please", "buy (\w+)")) → false
-@(has_pattern("Buy cheese please", "buy (\w+)")) → true
-@(has_pattern("Buy cheese please", "buy (\w+)").match) → Buy cheese
-```
-
-<a name="test:has_phone"></a>
-
-## has_phone(text, country_code)
-
-Tests whether `text` contains a phone number. The optional `country_code` argument specifies
-the country to use for parsing.
-
-
-```objectivec
-@(has_phone("my number is +12067799294")) → true
-@(has_phone("my number is 2067799294", "US")) → true
-@(has_phone("my number is 206 779 9294", "US").match) → +12067799294
-@(has_phone("my number is none of your business", "US")) → false
-```
-
-<a name="test:has_phrase"></a>
-
-## has_phrase(text, phrase)
-
-Tests whether `phrase` is contained in `text`
-
-The words in the test phrase must appear in the same order with no other words
-in between.
-
-
-```objectivec
-@(has_phrase("the quick brown fox", "brown fox")) → true
-@(has_phrase("the Quick Brown fox", "quick fox")) → false
-@(has_phrase("the Quick Brown fox", "")) → true
-@(has_phrase("the.quick.brown.fox", "the quick").match) → the quick
-```
-
-<a name="test:has_state"></a>
-
-## has_state(text)
-
-Tests whether a state name is contained in the `text`
-
-
-```objectivec
-@(has_state("Kigali")) → true
-@(has_state("Boston")) → false
-@(has_state("¡Kigali!")) → true
-@(has_state("¡Kigali!").match) → Rwanda > Kigali City
-@(has_state("I live in Kigali")) → true
-```
-
-<a name="test:has_text"></a>
-
-## has_text(text)
-
-Tests whether there the text has any characters in it
-
-
-```objectivec
-@(has_text("quick brown")) → true
-@(has_text("quick brown").match) → quick brown
-@(has_text("")) → false
-@(has_text(" \n")) → false
-@(has_text(123)) → true
-@(has_text(contact.fields.not_set)) → false
-```
-
-<a name="test:has_time"></a>
-
-## has_time(text)
-
-Tests whether `text` contains a time.
-
-
-```objectivec
-@(has_time("the time is 10:30")) → true
-@(has_time("the time is 10 PM")) → true
-@(has_time("the time is 10:30 PM").match) → 22:30:00.000000
-@(has_time("the time is 10:30:45").match) → 10:30:45.000000
-@(has_time("there is no time here, just the number 25")) → false
-```
-
-<a name="test:has_value"></a>
-
-## has_value(value)
-
-Returns whether `value` is non-nil and not an error
-
-Note that `contact.fields` and `run.results` are considered dynamic, so it is not an error
-to try to retrieve a value from fields or results which don't exist, rather these return an empty
-value.
-
-
-```objectivec
-@(has_value(datetime("foo"))) → false
-@(has_value(not.existing)) → false
-@(has_value(contact.fields.unset)) → false
-@(has_value("")) → false
-@(has_value("hello")) → true
-```
-
-<a name="test:has_wait_timed_out"></a>
-
-## has_wait_timed_out(run)
-
-Returns whether the last wait timed out.
-
-
-```objectivec
-@(has_wait_timed_out(run)) → false
-```
-
-<a name="test:has_ward"></a>
-
-## has_ward(text, district, state)
-
-Tests whether a ward name is contained in the `text`
-
-
-```objectivec
-@(has_ward("Gisozi", "Gasabo", "Kigali")) → true
-@(has_ward("I live in Gisozi", "Gasabo", "Kigali")) → true
-@(has_ward("I live in Gisozi", "Gasabo", "Kigali").match) → Rwanda > Kigali City > Gasabo > Gisozi
-@(has_ward("Gisozi", "Gasabo", "Brooklyn")) → false
-@(has_ward("Gisozi", "Brooklyn", "Kigali")) → false
-@(has_ward("Brooklyn", "Gasabo", "Kigali")) → false
-@(has_ward("Gasabo")) → false
-@(has_ward("Gisozi")) → true
-```
-
-<a name="test:is_error"></a>
-
-## is_error(value)
-
-Returns whether `value` is an error
-
-Note that `contact.fields` and `run.results` are considered dynamic, so it is not an error
-to try to retrieve a value from fields or results which don't exist, rather these return an empty
-value.
-
-
-```objectivec
-@(is_error(datetime("foo"))) → true
-@(is_error(run.not.existing)) → true
-@(is_error(contact.fields.unset)) → true
-@(is_error("hello")) → false
-```
-
-<a name="test:is_text_eq"></a>
-
-## is_text_eq(text1, text2)
-
-Returns whether two text values are equal (case sensitive). In the case that they
-are, it will return the text as the match.
-
-
-```objectivec
-@(is_text_eq("foo", "foo")) → true
-@(is_text_eq("foo", "FOO")) → false
-@(is_text_eq("foo", "bar")) → false
-@(is_text_eq("foo", " foo ")) → false
-@(is_text_eq(run.status, "completed")) → true
-@(is_text_eq(results.webhook.category, "Success")) → true
-@(is_text_eq(results.webhook.category, "Failure")) → false
 ```
 
 

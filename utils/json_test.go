@@ -59,7 +59,7 @@ func TestUnmarshalAndValidateWithLimit(t *testing.T) {
 
 func TestJSONDecodeGeneric(t *testing.T) {
 	// parse a JSON object into a map
-	data := []byte(`{"bool": true, "number": 123.34, "text": "hello", "dict": {"foo": "bar"}, "list": [1, "x"]}`)
+	data := []byte(`{"bool": true, "number": 123.34, "text": "hello", "object": {"foo": "bar"}, "array": [1, "x"]}`)
 	vals, err := utils.JSONDecodeGeneric(data)
 	assert.NoError(t, err)
 
@@ -67,8 +67,8 @@ func TestJSONDecodeGeneric(t *testing.T) {
 	assert.Equal(t, true, asMap["bool"])
 	assert.Equal(t, json.Number("123.34"), asMap["number"])
 	assert.Equal(t, "hello", asMap["text"])
-	assert.Equal(t, map[string]interface{}{"foo": "bar"}, asMap["dict"])
-	assert.Equal(t, []interface{}{json.Number("1"), "x"}, asMap["list"])
+	assert.Equal(t, map[string]interface{}{"foo": "bar"}, asMap["object"])
+	assert.Equal(t, []interface{}{json.Number("1"), "x"}, asMap["array"])
 
 	// parse a JSON array into a slice
 	data = []byte(`[{"foo": 123}, {"foo": 456}]`)
@@ -78,25 +78,6 @@ func TestJSONDecodeGeneric(t *testing.T) {
 	asSlice := vals.([]interface{})
 	assert.Equal(t, map[string]interface{}{"foo": json.Number("123")}, asSlice[0])
 	assert.Equal(t, map[string]interface{}{"foo": json.Number("456")}, asSlice[1])
-}
-
-func TestIsValidJSON(t *testing.T) {
-	assert.True(t, utils.IsValidJSON([]byte(`true`)))
-	assert.True(t, utils.IsValidJSON([]byte(`false`)))
-	assert.True(t, utils.IsValidJSON([]byte(`null`)))
-	assert.True(t, utils.IsValidJSON([]byte(`"abc"`)))
-	assert.True(t, utils.IsValidJSON([]byte(`123.456`)))
-	assert.True(t, utils.IsValidJSON([]byte(`{}`)))
-	assert.True(t, utils.IsValidJSON([]byte(`{"foo":"bar"}`)))
-	assert.True(t, utils.IsValidJSON([]byte(`[]`)))
-	assert.True(t, utils.IsValidJSON([]byte(`[1, "x"]`)))
-
-	assert.False(t, utils.IsValidJSON(nil))
-	assert.False(t, utils.IsValidJSON([]byte(`abc`)))
-	assert.False(t, utils.IsValidJSON([]byte(`{`)))
-	assert.False(t, utils.IsValidJSON([]byte(`{}xx`)))
-	assert.False(t, utils.IsValidJSON([]byte(`{foo:"bar"}`)))
-	assert.False(t, utils.IsValidJSON([]byte(`{0:"bar"}`)))
 }
 
 func TestReadTypeFromJSON(t *testing.T) {
@@ -109,4 +90,29 @@ func TestReadTypeFromJSON(t *testing.T) {
 	typeName, err := utils.ReadTypeFromJSON([]byte(`{"thing": 2, "type": "foo"}`))
 	assert.NoError(t, err)
 	assert.Equal(t, "foo", typeName)
+}
+
+func TestExtractResponseJSON(t *testing.T) {
+	// valid HTTP trace and response body
+	trace := "HTTP/1.1 200 OK\r\n" +
+		"Server: nginx\r\n" +
+		"Content-Type: application/json\r\n" +
+		"Transfer-Encoding: chunked\r\n" +
+		"Date: Tue, 27 Aug 2019 16:26:18 GMT\r\n" +
+		"\r\n" +
+		"{\"fact\":\"Cats have nine lives thanks to a flexible spine and powerful leg and back muscles\",\"length\":83}"
+
+	assert.Equal(t, json.RawMessage(`{"fact":"Cats have nine lives thanks to a flexible spine and powerful leg and back muscles","length":83}`), utils.ExtractResponseJSON([]byte(trace)))
+
+	// not a valid trace with body
+	assert.Nil(t, utils.ExtractResponseJSON([]byte("HTTP/1.1 200 OK\r\n{}")))
+
+	// valid trace, but body not JSON
+	trace = "HTTP/1.1 200 OK\r\n" +
+		"Server: nginx\r\n" +
+		"Date: Tue, 27 Aug 2019 16:26:18 GMT\r\n" +
+		"\r\n" +
+		"Cats have nine lives"
+
+	assert.Equal(t, json.RawMessage(`"Cats have nine lives"`), utils.ExtractResponseJSON([]byte(trace)))
 }

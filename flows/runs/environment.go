@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/utils"
 
@@ -13,13 +14,13 @@ import (
 )
 
 type runEnvironment struct {
-	utils.Environment
+	envs.Environment
 
 	run *flowRun
 }
 
 // creates a run environment based on the given run
-func newRunEnvironment(base utils.Environment, run *flowRun) flows.RunEnvironment {
+func newRunEnvironment(base envs.Environment, run *flowRun) flows.RunEnvironment {
 	return &runEnvironment{base, run}
 }
 
@@ -85,8 +86,8 @@ func (e *runEnvironment) FindLocationsFuzzy(text string, level utils.LocationLev
 	}
 
 	// try with each pair of words
-	for w := 0; w < len(words)-1; w++ {
-		wordPair := strings.Join(words[w:w+2], " ")
+	for i := 0; i < len(words)-1; i++ {
+		wordPair := strings.Join(words[i:i+2], " ")
 		if locations, err := e.FindLocations(wordPair, level, parent); len(locations) > 0 || err != nil {
 			return locations, err
 		}
@@ -95,7 +96,7 @@ func (e *runEnvironment) FindLocationsFuzzy(text string, level utils.LocationLev
 	return []*utils.Location{}, nil
 }
 
-func (e *runEnvironment) LookupLocation(path flows.LocationPath) (*utils.Location, error) {
+func (e *runEnvironment) LookupLocation(path utils.LocationPath) (*utils.Location, error) {
 	locations, err := e.Locations()
 	if err != nil {
 		return nil, err
@@ -104,7 +105,7 @@ func (e *runEnvironment) LookupLocation(path flows.LocationPath) (*utils.Locatio
 		return nil, errors.Errorf("can't lookup locations in environment which is not location enabled")
 	}
 
-	return locations.FindByPath(path.String()), nil
+	return locations.FindByPath(path), nil
 }
 
 var _ flows.RunEnvironment = (*runEnvironment)(nil)

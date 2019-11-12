@@ -7,10 +7,11 @@ import (
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/events"
 	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/utils/uuids"
 )
 
 func init() {
-	RegisterType(TypeSayMsg, func() flows.Action { return &SayMsgAction{} })
+	registerType(TypeSayMsg, func() flows.Action { return &SayMsgAction{} })
 }
 
 // TypeSayMsg is the type for the say message action
@@ -31,17 +32,17 @@ const TypeSayMsg string = "say_msg"
 //
 // @action say_msg
 type SayMsgAction struct {
-	BaseAction
+	baseAction
 	voiceAction
 
-	Text     string `json:"text" validate:"required"`
+	Text     string `json:"text" validate:"required" engine:"localized,evaluated"`
 	AudioURL string `json:"audio_url,omitempty"`
 }
 
-// NewSayMsgAction creates a new say message action
-func NewSayMsgAction(uuid flows.ActionUUID, text string, audioURL string) *SayMsgAction {
+// NewSayMsg creates a new say message action
+func NewSayMsg(uuid flows.ActionUUID, text string, audioURL string) *SayMsgAction {
 	return &SayMsgAction{
-		BaseAction: NewBaseAction(TypeSayMsg, uuid),
+		baseAction: newBaseAction(TypeSayMsg, uuid),
 		Text:       text,
 		AudioURL:   audioURL,
 	}
@@ -50,49 +51,32 @@ func NewSayMsgAction(uuid flows.ActionUUID, text string, audioURL string) *SayMs
 // Execute runs this action
 func (a *SayMsgAction) Execute(run flows.FlowRun, step flows.Step, logModifier flows.ModifierCallback, logEvent flows.EventCallback) error {
 	// localize and evaluate the message text
-	localizedText := run.GetText(utils.UUID(a.UUID()), "text", a.Text)
+	localizedText := run.GetText(uuids.UUID(a.UUID()), "text", a.Text)
 	evaluatedText, err := run.EvaluateTemplate(localizedText)
 	if err != nil {
-		logEvent(events.NewErrorEvent(err))
+		logEvent(events.NewError(err))
 	}
 	evaluatedText = strings.TrimSpace(evaluatedText)
 
 	// localize the audio URL
-	localizedAudioURL := run.GetText(utils.UUID(a.UUID()), "audio_url", a.AudioURL)
+	localizedAudioURL := run.GetText(uuids.UUID(a.UUID()), "audio_url", a.AudioURL)
 
 	// if we have neither an audio URL or backdown text, skip
 	if evaluatedText == "" && localizedAudioURL == "" {
-		logEvent(events.NewErrorEventf("need either audio URL or backdown text, skipping"))
+		logEvent(events.NewErrorf("need either audio URL or backdown text, skipping"))
 		return nil
 	}
 
-	var attachments []flows.Attachment
+	var attachments []utils.Attachment
 	if localizedAudioURL != "" {
-		attachments = []flows.Attachment{flows.Attachment(fmt.Sprintf("audio:%s", localizedAudioURL))}
+		attachments = []utils.Attachment{utils.Attachment(fmt.Sprintf("audio:%s", localizedAudioURL))}
 	}
 
 	// an IVR flow must have been started with a connection
 	connection := run.Session().Trigger().Connection()
 
-	msg := flows.NewMsgOut(connection.URN(), connection.Channel(), evaluatedText, attachments, nil)
-	logEvent(events.NewIVRCreatedEvent(msg))
+	msg := flows.NewMsgOut(connection.URN(), connection.Channel(), evaluatedText, attachments, nil, nil)
+	logEvent(events.NewIVRCreated(msg))
 
 	return nil
-}
-
-// Inspect inspects this object and any children
-func (a *SayMsgAction) Inspect(inspect func(flows.Inspectable)) {
-	inspect(a)
-}
-
-// EnumerateTemplates enumerates all expressions on this object and its children
-func (a *SayMsgAction) EnumerateTemplates(localization flows.Localization, include func(string)) {
-	include(a.Text)
-	flows.EnumerateTemplateTranslations(localization, a, "text", include)
-}
-
-// RewriteTemplates rewrites all templates on this object and its children
-func (a *SayMsgAction) RewriteTemplates(localization flows.Localization, rewrite func(string) string) {
-	a.Text = rewrite(a.Text)
-	flows.RewriteTemplateTranslations(localization, a, "text", rewrite)
 }

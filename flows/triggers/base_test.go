@@ -8,12 +8,14 @@ import (
 	"github.com/nyaruka/gocommon/urns"
 	"github.com/nyaruka/goflow/assets"
 	"github.com/nyaruka/goflow/assets/static"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent/types"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/engine"
 	"github.com/nyaruka/goflow/flows/triggers"
 	"github.com/nyaruka/goflow/test"
-	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/utils/dates"
+	"github.com/nyaruka/goflow/utils/uuids"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,8 +26,11 @@ var assetsJSON = `{
 		{
 			"uuid": "7c37d7e5-6468-4b31-8109-ced2ef8b5ddc",
 			"name": "Registration",
-			"nodes": []
-		}
+            "spec_version": "13.0",
+            "language": "eng",
+            "type": "messaging",
+            "nodes": []
+        }
 	],
 	"channels": [
 		{
@@ -46,23 +51,23 @@ var assetsJSON = `{
 }`
 
 func TestTriggerMarshaling(t *testing.T) {
-	defer utils.SetTimeSource(utils.DefaultTimeSource)
-	utils.SetTimeSource(utils.NewFixedTimeSource(time.Date(2018, 10, 20, 9, 49, 30, 1234567890, time.UTC)))
+	defer dates.SetNowSource(dates.DefaultNowSource)
+	dates.SetNowSource(dates.NewFixedNowSource(time.Date(2018, 10, 20, 9, 49, 30, 1234567890, time.UTC)))
 
-	utils.SetUUIDGenerator(utils.NewSeededUUID4Generator(1234))
-	defer utils.SetUUIDGenerator(utils.DefaultUUIDGenerator)
+	uuids.SetGenerator(uuids.NewSeededGenerator(1234))
+	defer uuids.SetGenerator(uuids.DefaultGenerator)
 
 	source, err := static.NewSource([]byte(assetsJSON))
 	require.NoError(t, err)
 
-	sa, err := engine.NewSessionAssets(source)
+	sa, err := engine.NewSessionAssets(source, nil)
 	require.NoError(t, err)
 
-	env := utils.NewEnvironmentBuilder().Build()
+	env := envs.NewBuilder().Build()
 	flow := assets.NewFlowReference(assets.FlowUUID("7c37d7e5-6468-4b31-8109-ced2ef8b5ddc"), "Registration")
 	channel := assets.NewChannelReference("3a05eaf5-cb1b-4246-bef1-f277419c83a7", "Nexmo")
 
-	contact := flows.NewEmptyContact(sa, "Bob", utils.Language("eng"), nil)
+	contact := flows.NewEmptyContact(sa, "Bob", envs.Language("eng"), nil)
 	contact.AddURN(flows.NewContactURN(urns.URN("tel:+12065551212"), nil))
 
 	triggerTests := []struct {
@@ -70,7 +75,7 @@ func TestTriggerMarshaling(t *testing.T) {
 		marshaled string
 	}{
 		{
-			triggers.NewCampaignTrigger(
+			triggers.NewCampaign(
 				env,
 				flow,
 				contact,
@@ -111,12 +116,12 @@ func TestTriggerMarshaling(t *testing.T) {
 			}`,
 		},
 		{
-			triggers.NewChannelTrigger(
+			triggers.NewChannel(
 				env,
 				flow,
 				contact,
 				triggers.NewChannelEvent(triggers.ChannelEventTypeNewConversation, channel),
-				types.NewEmptyXMap(),
+				nil,
 			),
 			`{
 				"contact": {
@@ -154,7 +159,7 @@ func TestTriggerMarshaling(t *testing.T) {
 			}`,
 		},
 		{
-			triggers.NewFlowActionTrigger(
+			triggers.NewFlowAction(
 				env,
 				flow,
 				contact,
@@ -191,7 +196,7 @@ func TestTriggerMarshaling(t *testing.T) {
 			}`,
 		},
 		{
-			triggers.NewIncomingCallTrigger(
+			triggers.NewIncomingCall(
 				env,
 				flow,
 				contact,
@@ -235,16 +240,17 @@ func TestTriggerMarshaling(t *testing.T) {
 					"name": "Registration",
 					"uuid": "7c37d7e5-6468-4b31-8109-ced2ef8b5ddc"
 				},
+				"params": {},
 				"triggered_on": "2018-10-20T09:49:31.23456789Z",
 				"type": "channel"
 			}`,
 		},
 		{
-			triggers.NewManualTrigger(
+			triggers.NewManual(
 				env,
 				flow,
 				contact,
-				types.NewXArray(types.NewXText("foo")),
+				types.NewXObject(map[string]types.XValue{"foo": types.NewXText("bar")}),
 			),
 			`{
 				"contact": {
@@ -269,20 +275,20 @@ func TestTriggerMarshaling(t *testing.T) {
 					"name": "Registration",
 					"uuid": "7c37d7e5-6468-4b31-8109-ced2ef8b5ddc"
 				},
-				"params": [
-					"foo"
-				],
+				"params": {
+					"foo": "bar"
+				},
 				"triggered_on": "2018-10-20T09:49:31.23456789Z",
 				"type": "manual"
 			}`,
 		},
 		{
-			triggers.NewManualVoiceTrigger(
+			triggers.NewManualVoice(
 				env,
 				flow,
 				contact,
 				flows.NewConnection(channel, "tel:+12065551212"),
-				types.NewXArray(types.NewXText("foo")),
+				types.NewXObject(map[string]types.XValue{"foo": types.NewXText("bar")}),
 			),
 			`{
 				"connection": {
@@ -314,15 +320,15 @@ func TestTriggerMarshaling(t *testing.T) {
 					"name": "Registration",
 					"uuid": "7c37d7e5-6468-4b31-8109-ced2ef8b5ddc"
 				},
-				"params": [
-					"foo"
-				],
+				"params": {
+					"foo": "bar"
+				},
 				"triggered_on": "2018-10-20T09:49:31.23456789Z",
 				"type": "manual"
 			}`,
 		},
 		{
-			triggers.NewMsgTrigger(
+			triggers.NewMsg(
 				env,
 				flow,
 				contact,
@@ -385,9 +391,9 @@ func TestTriggerMarshaling(t *testing.T) {
 
 func TestReadTrigger(t *testing.T) {
 	missingAssets := make([]assets.Reference, 0)
-	missing := func(a assets.Reference) { missingAssets = append(missingAssets, a) }
+	missing := func(a assets.Reference, err error) { missingAssets = append(missingAssets, a) }
 
-	sessionAssets, err := engine.NewSessionAssets(static.NewEmptySource())
+	sessionAssets, err := engine.NewSessionAssets(static.NewEmptySource(), nil)
 	require.NoError(t, err)
 
 	// error if no type field
@@ -397,4 +403,64 @@ func TestReadTrigger(t *testing.T) {
 	// error if we don't recognize action type
 	_, err = triggers.ReadTrigger(sessionAssets, []byte(`{"type": "do_the_foo", "foo": "bar"}`), missing)
 	assert.EqualError(t, err, "unknown type: 'do_the_foo'")
+}
+
+func TestTriggerSessionInitialization(t *testing.T) {
+	source, err := static.NewSource([]byte(assetsJSON))
+	require.NoError(t, err)
+
+	sa, err := engine.NewSessionAssets(source, nil)
+	require.NoError(t, err)
+
+	defaultEnv := envs.NewBuilder().Build()
+	env := envs.NewBuilder().WithDateFormat(envs.DateFormatMonthDayYear).Build()
+
+	flow := assets.NewFlowReference(assets.FlowUUID("7c37d7e5-6468-4b31-8109-ced2ef8b5ddc"), "Registration")
+
+	contact := flows.NewEmptyContact(sa, "Bob", envs.Language("eng"), nil)
+	contact.AddURN(flows.NewContactURN(urns.URN("tel:+12065551212"), nil))
+
+	params := types.NewXObject(map[string]types.XValue{"foo": types.NewXText("bar")})
+
+	trigger := triggers.NewManual(
+		env,
+		flow,
+		contact,
+		params,
+	)
+
+	assert.Equal(t, triggers.TypeManual, trigger.Type())
+	assert.Equal(t, env, trigger.Environment())
+	assert.Equal(t, contact, trigger.Contact())
+	assert.Nil(t, trigger.Connection())
+	assert.Equal(t, params, trigger.Params())
+
+	eng := engine.NewBuilder().Build()
+	session, _, err := eng.NewSession(sa, trigger)
+	require.NoError(t, err)
+
+	assert.Equal(t, flows.FlowTypeMessaging, session.Type())
+	assert.Equal(t, contact, session.Contact())
+	assert.Equal(t, env, session.Environment())
+	assert.Equal(t, flow, session.Runs()[0].FlowReference())
+
+	// contact, environment and params are optional
+	trigger = triggers.NewManual(
+		nil,
+		flow,
+		nil,
+		nil,
+	)
+
+	assert.Equal(t, triggers.TypeManual, trigger.Type())
+	assert.Nil(t, trigger.Environment())
+	assert.Nil(t, trigger.Contact())
+	assert.Equal(t, types.XObjectEmpty, trigger.Params())
+
+	session, _, err = eng.NewSession(sa, trigger)
+	require.NoError(t, err)
+
+	assert.Equal(t, flows.FlowTypeMessaging, session.Type())
+	assert.Nil(t, session.Contact())
+	assert.Equal(t, defaultEnv, session.Environment()) // uses defaults
 }

@@ -6,10 +6,11 @@ import (
 
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/events"
+	"github.com/nyaruka/goflow/utils/uuids"
 )
 
 func init() {
-	RegisterType(TypeSendEmail, func() flows.Action { return &SendEmailAction{} })
+	registerType(TypeSendEmail, func() flows.Action { return &SendEmailAction{} })
 }
 
 // TypeSendEmail is the type for the send email action
@@ -23,25 +24,25 @@ const TypeSendEmail string = "send_email"
 //   {
 //     "uuid": "8eebd020-1af5-431c-b943-aa670fc74da9",
 //     "type": "send_email",
-//     "addresses": ["@(contact.urns.mailto[0])"],
+//     "addresses": ["@urns.mailto"],
 //     "subject": "Here is your activation token",
 //     "body": "Your activation token is @contact.fields.activation_token"
 //   }
 //
 // @action send_email
 type SendEmailAction struct {
-	BaseAction
+	baseAction
 	onlineAction
 
-	Addresses []string `json:"addresses" validate:"required,min=1"`
-	Subject   string   `json:"subject" validate:"required"`
-	Body      string   `json:"body" validate:"required"`
+	Addresses []string `json:"addresses" validate:"required,min=1" engine:"evaluated"`
+	Subject   string   `json:"subject" validate:"required" engine:"localized,evaluated"`
+	Body      string   `json:"body" validate:"required" engine:"localized,evaluated"`
 }
 
-// NewSendEmailAction creates a new send email action
-func NewSendEmailAction(uuid flows.ActionUUID, addresses []string, subject string, body string) *SendEmailAction {
+// NewSendEmail creates a new send email action
+func NewSendEmail(uuid flows.ActionUUID, addresses []string, subject string, body string) *SendEmailAction {
 	return &SendEmailAction{
-		BaseAction: NewBaseAction(TypeSendEmail, uuid),
+		baseAction: newBaseAction(TypeSendEmail, uuid),
 		Addresses:  addresses,
 		Subject:    subject,
 		Body:       body,
@@ -50,26 +51,28 @@ func NewSendEmailAction(uuid flows.ActionUUID, addresses []string, subject strin
 
 // Execute creates the email events
 func (a *SendEmailAction) Execute(run flows.FlowRun, step flows.Step, logModifier flows.ModifierCallback, logEvent flows.EventCallback) error {
-	subject, err := run.EvaluateTemplate(a.Subject)
+	localizedSubject := run.GetText(uuids.UUID(a.UUID()), "subject", a.Subject)
+	evaluatedSubject, err := run.EvaluateTemplate(localizedSubject)
 	if err != nil {
-		logEvent(events.NewErrorEvent(err))
+		logEvent(events.NewError(err))
 	}
 
 	// make sure the subject is single line - replace '\t\n\r\f\v' to ' '
-	subject = regexp.MustCompile(`\s+`).ReplaceAllString(subject, " ")
-	subject = strings.TrimSpace(subject)
+	evaluatedSubject = regexp.MustCompile(`\s+`).ReplaceAllString(evaluatedSubject, " ")
+	evaluatedSubject = strings.TrimSpace(evaluatedSubject)
 
-	if subject == "" {
-		logEvent(events.NewErrorEventf("email subject evaluated to empty string, skipping"))
+	if evaluatedSubject == "" {
+		logEvent(events.NewErrorf("email subject evaluated to empty string, skipping"))
 		return nil
 	}
 
-	body, err := run.EvaluateTemplate(a.Body)
+	localizedBody := run.GetText(uuids.UUID(a.UUID()), "body", a.Body)
+	evaluatedBody, err := run.EvaluateTemplate(localizedBody)
 	if err != nil {
-		logEvent(events.NewErrorEvent(err))
+		logEvent(events.NewError(err))
 	}
-	if body == "" {
-		logEvent(events.NewErrorEventf("email body evaluated to empty string, skipping"))
+	if evaluatedBody == "" {
+		logEvent(events.NewErrorf("email body evaluated to empty string, skipping"))
 		return nil
 	}
 
@@ -78,10 +81,10 @@ func (a *SendEmailAction) Execute(run flows.FlowRun, step flows.Step, logModifie
 	for _, address := range a.Addresses {
 		evaluatedAddress, err := run.EvaluateTemplate(address)
 		if err != nil {
-			logEvent(events.NewErrorEvent(err))
+			logEvent(events.NewError(err))
 		}
 		if evaluatedAddress == "" {
-			logEvent(events.NewErrorEventf("email address evaluated to empty string, skipping"))
+			logEvent(events.NewErrorf("email address evaluated to empty string, skipping"))
 			continue
 		}
 
@@ -94,27 +97,8 @@ func (a *SendEmailAction) Execute(run flows.FlowRun, step flows.Step, logModifie
 	}
 
 	if len(evaluatedAddresses) > 0 {
-		logEvent(events.NewEmailCreatedEvent(evaluatedAddresses, subject, body))
+		logEvent(events.NewEmailCreated(evaluatedAddresses, evaluatedSubject, evaluatedBody))
 	}
 
 	return nil
-}
-
-// Inspect inspects this object and any children
-func (a *SendEmailAction) Inspect(inspect func(flows.Inspectable)) {
-	inspect(a)
-}
-
-// EnumerateTemplates enumerates all expressions on this object and its children
-func (a *SendEmailAction) EnumerateTemplates(localization flows.Localization, include func(string)) {
-	include(a.Subject)
-	include(a.Body)
-	flows.EnumerateTemplateArray(a.Addresses, include)
-}
-
-// RewriteTemplates rewrites all templates on this object and its children
-func (a *SendEmailAction) RewriteTemplates(localization flows.Localization, rewrite func(string) string) {
-	a.Subject = rewrite(a.Subject)
-	a.Body = rewrite(a.Body)
-	flows.RewriteTemplateArray(a.Addresses, rewrite)
 }

@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	RegisterType(TypeAddContactURN, func() flows.Action { return &AddContactURNAction{} })
+	registerType(TypeAddContactURN, func() flows.Action { return &AddContactURNAction{} })
 }
 
 // TypeAddContactURN is our type for the add URN action
@@ -25,22 +25,22 @@ const TypeAddContactURN string = "add_contact_urn"
 //     "uuid": "8eebd020-1af5-431c-b943-aa670fc74da9",
 //     "type": "add_contact_urn",
 //     "scheme": "tel",
-//     "path": "@results.phone_number"
+//     "path": "@results.phone_number.value"
 //   }
 //
 // @action add_contact_urn
 type AddContactURNAction struct {
-	BaseAction
+	baseAction
 	universalAction
 
 	Scheme string `json:"scheme" validate:"urnscheme"`
-	Path   string `json:"path" validate:"required"`
+	Path   string `json:"path" validate:"required" engine:"evaluated"`
 }
 
-// NewAddContactURNAction creates a new add URN action
-func NewAddContactURNAction(uuid flows.ActionUUID, scheme string, path string) *AddContactURNAction {
+// NewAddContactURN creates a new add URN action
+func NewAddContactURN(uuid flows.ActionUUID, scheme string, path string) *AddContactURNAction {
 	return &AddContactURNAction{
-		BaseAction: NewBaseAction(TypeAddContactURN, uuid),
+		baseAction: newBaseAction(TypeAddContactURN, uuid),
 		Scheme:     scheme,
 		Path:       path,
 	}
@@ -51,7 +51,7 @@ func (a *AddContactURNAction) Execute(run flows.FlowRun, step flows.Step, logMod
 	// only generate event if run has a contact
 	contact := run.Contact()
 	if contact == nil {
-		logEvent(events.NewErrorEventf("can't execute action in session without a contact"))
+		logEvent(events.NewErrorf("can't execute action in session without a contact"))
 		return nil
 	}
 
@@ -59,37 +59,22 @@ func (a *AddContactURNAction) Execute(run flows.FlowRun, step flows.Step, logMod
 
 	// if we received an error, log it although it might just be a non-expression like foo@bar.com
 	if err != nil {
-		logEvent(events.NewErrorEvent(err))
+		logEvent(events.NewError(err))
 	}
 
 	evaluatedPath = strings.TrimSpace(evaluatedPath)
 	if evaluatedPath == "" {
-		logEvent(events.NewErrorEventf("can't add URN with empty path"))
+		logEvent(events.NewErrorf("can't add URN with empty path"))
 		return nil
 	}
 
 	// if we don't have a valid URN, log error
 	urn, err := urns.NewURNFromParts(a.Scheme, evaluatedPath, "", "")
 	if err != nil {
-		logEvent(events.NewErrorEvent(errors.Wrapf(err, "unable to add URN '%s:%s'", a.Scheme, evaluatedPath)))
+		logEvent(events.NewError(errors.Wrapf(err, "unable to add URN '%s:%s'", a.Scheme, evaluatedPath)))
 		return nil
 	}
 
-	a.applyModifier(run, modifiers.NewURNModifier(urn, modifiers.URNAppend), logModifier, logEvent)
+	a.applyModifier(run, modifiers.NewURN(urn, modifiers.URNAppend), logModifier, logEvent)
 	return nil
-}
-
-// Inspect inspects this object and any children
-func (a *AddContactURNAction) Inspect(inspect func(flows.Inspectable)) {
-	inspect(a)
-}
-
-// EnumerateTemplates enumerates all expressions on this object and its children
-func (a *AddContactURNAction) EnumerateTemplates(localization flows.Localization, include func(string)) {
-	include(a.Path)
-}
-
-// RewriteTemplates rewrites all templates on this object and its children
-func (a *AddContactURNAction) RewriteTemplates(localization flows.Localization, rewrite func(string) string) {
-	a.Path = rewrite(a.Path)
 }

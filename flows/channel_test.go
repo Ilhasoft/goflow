@@ -6,19 +6,20 @@ import (
 
 	"github.com/nyaruka/gocommon/urns"
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent/types"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/test"
-	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/utils/uuids"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestChannel(t *testing.T) {
-	env := utils.NewEnvironmentBuilder().Build()
+	env := envs.NewBuilder().Build()
 
-	utils.SetUUIDGenerator(utils.NewSeededUUID4Generator(1234))
-	defer utils.SetUUIDGenerator(utils.DefaultUUIDGenerator)
+	uuids.SetGenerator(uuids.NewSeededGenerator(1234))
+	defer uuids.SetGenerator(uuids.DefaultGenerator)
 
 	rolesDefault := []assets.ChannelRole{assets.ChannelRoleSend, assets.ChannelRoleReceive}
 	ch := test.NewChannel("Android", "+250961111111", []string{"tel"}, rolesDefault, nil)
@@ -27,15 +28,14 @@ func TestChannel(t *testing.T) {
 	assert.Equal(t, "Android", ch.Name())
 	assert.Equal(t, []string{"tel"}, ch.Schemes())
 	assert.Equal(t, "+250961111111", ch.Address())
-	assert.Equal(t, "channel", ch.Describe())
 	assert.Equal(t, "+250961111111 (Android)", fmt.Sprintf("%s", ch))
 
-	assert.Equal(t, types.NewXText(string(ch.UUID())), ch.Resolve(env, "uuid"))
-	assert.Equal(t, types.NewXText("Android"), ch.Resolve(env, "name"))
-	assert.Equal(t, types.NewXText("+250961111111"), ch.Resolve(env, "address"))
-	assert.Equal(t, types.NewXResolveError(ch, "xxx"), ch.Resolve(env, "xxx"))
-	assert.Equal(t, types.NewXText("Android"), ch.Reduce(env))
-	assert.Equal(t, types.NewXText(`{"address":"+250961111111","name":"Android","uuid":"c00e5d67-c275-4389-aded-7d8b151cbd5b"}`), ch.ToXJSON(env))
+	test.AssertXEqual(t, types.NewXObject(map[string]types.XValue{
+		"__default__": types.NewXText("Android"),
+		"uuid":        types.NewXText(string(ch.UUID())),
+		"name":        types.NewXText("Android"),
+		"address":     types.NewXText("+250961111111"),
+	}), flows.Context(env, ch))
 
 	assert.Equal(t, assets.NewChannelReference(ch.UUID(), "Android"), ch.Reference())
 	assert.True(t, ch.HasRole(assets.ChannelRoleSend))

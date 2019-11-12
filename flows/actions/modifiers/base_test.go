@@ -10,12 +10,14 @@ import (
 	"github.com/nyaruka/gocommon/urns"
 	"github.com/nyaruka/goflow/assets"
 	"github.com/nyaruka/goflow/assets/static"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent/types"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/actions/modifiers"
 	"github.com/nyaruka/goflow/flows/engine"
 	"github.com/nyaruka/goflow/test"
-	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/utils/dates"
+	"github.com/nyaruka/goflow/utils/uuids"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -45,12 +47,12 @@ func testModifierType(t *testing.T, sessionAssets flows.SessionAssets, typeName 
 	err = json.Unmarshal(testFile, &tests)
 	require.NoError(t, err)
 
-	defer utils.SetTimeSource(utils.DefaultTimeSource)
-	defer utils.SetUUIDGenerator(utils.DefaultUUIDGenerator)
+	defer dates.SetNowSource(dates.DefaultNowSource)
+	defer uuids.SetGenerator(uuids.DefaultGenerator)
 
 	for _, tc := range tests {
-		utils.SetTimeSource(utils.NewFixedTimeSource(time.Date(2018, 10, 18, 14, 20, 30, 123456, time.UTC)))
-		utils.SetUUIDGenerator(utils.NewSeededUUID4Generator(12345))
+		dates.SetNowSource(dates.NewFixedNowSource(time.Date(2018, 10, 18, 14, 20, 30, 123456, time.UTC)))
+		uuids.SetGenerator(uuids.NewSeededGenerator(12345))
 
 		testName := fmt.Sprintf("test '%s' for modifier type '%s'", tc.Description, typeName)
 
@@ -64,15 +66,15 @@ func testModifierType(t *testing.T, sessionAssets flows.SessionAssets, typeName 
 		require.NoError(t, err, "error loading contact_before in %s", testName)
 
 		// apply the modifier
-		logEvent := make([]flows.Event, 0)
-		modifier.Apply(utils.NewEnvironmentBuilder().Build(), sessionAssets, contact, func(e flows.Event) { logEvent = append(logEvent, e) })
+		eventLog := test.NewEventLog()
+		modifier.Apply(envs.NewBuilder().Build(), sessionAssets, contact, eventLog.Log)
 
 		// check contact is in the expected state
 		contactJSON, _ := json.Marshal(contact)
 		test.AssertEqualJSON(t, tc.ContactAfter, contactJSON, "contact mismatch in %s", testName)
 
 		// check events are what we expected
-		actualEventsJSON, _ := json.Marshal(logEvent)
+		actualEventsJSON, _ := json.Marshal(eventLog.Events)
 		expectedEventsJSON, _ := json.Marshal(tc.Events)
 		test.AssertEqualJSON(t, expectedEventsJSON, actualEventsJSON, "events mismatch in %s", testName)
 
@@ -98,7 +100,7 @@ func TestConstructors(t *testing.T) {
 		json     string
 	}{
 		{
-			modifiers.NewChannelModifier(nexmo),
+			modifiers.NewChannel(nexmo),
 			`{
 				"type": "channel",
 				"channel": {
@@ -108,7 +110,7 @@ func TestConstructors(t *testing.T) {
 			}`,
 		},
 		{
-			modifiers.NewFieldModifier(age, flows.NewValue(types.NewXText("37 years"), nil, &ageValue, "", "", "")),
+			modifiers.NewField(age, flows.NewValue(types.NewXText("37 years"), nil, &ageValue, "", "", "")),
 			`{
 				"type": "field",
 				"field": {
@@ -122,7 +124,7 @@ func TestConstructors(t *testing.T) {
 			}`,
 		},
 		{
-			modifiers.NewGroupsModifier([]*flows.Group{testers}, modifiers.GroupsAdd),
+			modifiers.NewGroups([]*flows.Group{testers}, modifiers.GroupsAdd),
 			`{
 				"type": "groups",
 				"groups": [
@@ -135,28 +137,28 @@ func TestConstructors(t *testing.T) {
 			}`,
 		},
 		{
-			modifiers.NewLanguageModifier(utils.Language("fra")),
+			modifiers.NewLanguage(envs.Language("fra")),
 			`{
 				"type": "language",
 				"language": "fra"
 			}`,
 		},
 		{
-			modifiers.NewNameModifier("Bob"),
+			modifiers.NewName("Bob"),
 			`{
 				"type": "name",
 				"name": "Bob"
 			}`,
 		},
 		{
-			modifiers.NewTimezoneModifier(la),
+			modifiers.NewTimezone(la),
 			`{
 				"type": "timezone",
 				"timezone": "America/Los_Angeles"
 			}`,
 		},
 		{
-			modifiers.NewURNModifier(urns.URN("tel:+1234567890"), modifiers.URNAppend),
+			modifiers.NewURN(urns.URN("tel:+1234567890"), modifiers.URNAppend),
 			`{
 				"type": "urn",
 				"urn": "tel:+1234567890",
@@ -174,9 +176,9 @@ func TestConstructors(t *testing.T) {
 
 func TestReadModifier(t *testing.T) {
 	missingAssets := make([]assets.Reference, 0)
-	missing := func(a assets.Reference) { missingAssets = append(missingAssets, a) }
+	missing := func(a assets.Reference, err error) { missingAssets = append(missingAssets, a) }
 
-	sessionAssets, err := engine.NewSessionAssets(static.NewEmptySource())
+	sessionAssets, err := engine.NewSessionAssets(static.NewEmptySource(), nil)
 	require.NoError(t, err)
 
 	// error if no type field
@@ -211,7 +213,7 @@ func TestReadModifier(t *testing.T) {
 			{"uuid": "4349cdd6-5385-46f3-8e55-5750dd4f35fb", "name": "Winners"}
 		]
 	}`))
-	sessionAssets, err = engine.NewSessionAssets(source)
+	sessionAssets, err = engine.NewSessionAssets(source, nil)
 	require.NoError(t, err)
 
 	mod, err = modifiers.ReadModifier(sessionAssets, []byte(`{"type": "groups", "modification": "add", "groups": [{"uuid": "cd1a2aa6-0d9d-4a8c-b32d-ca5de9c43bdb", "name": "Losers"}, {"uuid": "4349cdd6-5385-46f3-8e55-5750dd4f35fb", "name": "Winners"}]}`), missing)

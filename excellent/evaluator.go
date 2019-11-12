@@ -4,19 +4,24 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent/functions"
 	"github.com/nyaruka/goflow/excellent/gen"
+	"github.com/nyaruka/goflow/excellent/operators"
 	"github.com/nyaruka/goflow/excellent/types"
 	"github.com/nyaruka/goflow/utils"
 
 	"github.com/antlr/antlr4/runtime/Go/antlr"
 )
 
+// Escaping is a function applied to expressions in a template after they've been evaluated
+type Escaping func(string) string
+
 // EvaluateTemplate evaluates the passed in template
-func EvaluateTemplate(env utils.Environment, context types.XValue, template string, allowedTopLevels []string) (string, error) {
+func EvaluateTemplate(env envs.Environment, context *types.XObject, template string, escaping Escaping) (string, error) {
 	var buf strings.Builder
 
-	err := VisitTemplate(template, allowedTopLevels, func(tokenType XTokenType, token string) error {
+	err := VisitTemplate(template, context.Properties(), func(tokenType XTokenType, token string) error {
 		switch tokenType {
 		case BODY:
 			buf.WriteString(token)
@@ -29,8 +34,14 @@ func EvaluateTemplate(env utils.Environment, context types.XValue, template stri
 			}
 
 			// if not, stringify value and append to the output
-			strValue, _ := types.ToXText(env, value)
-			buf.WriteString(strValue.Native())
+			asText, _ := types.ToXText(env, value)
+			asString := asText.Native()
+
+			if escaping != nil {
+				asString = escaping(asString)
+			}
+
+			buf.WriteString(asString)
 		}
 		return nil
 	})
@@ -41,9 +52,9 @@ func EvaluateTemplate(env utils.Environment, context types.XValue, template stri
 // EvaluateTemplateValue is equivalent to EvaluateTemplate except in the case where the template contains
 // a single identifier or expression, ie: "@contact" or "@(first(contact.urns))". In these cases we return
 // the typed value from EvaluateExpression instead of stringifying the result.
-func EvaluateTemplateValue(env utils.Environment, context types.XValue, template string, allowedTopLevels []string) (types.XValue, error) {
+func EvaluateTemplateValue(env envs.Environment, context *types.XObject, template string) (types.XValue, error) {
 	template = strings.TrimSpace(template)
-	scanner := NewXScanner(strings.NewReader(template), allowedTopLevels)
+	scanner := NewXScanner(strings.NewReader(template), context.Properties())
 
 	// parse our first token
 	tokenType, token := scanner.Scan()
@@ -60,13 +71,13 @@ func EvaluateTemplateValue(env utils.Environment, context types.XValue, template
 	}
 
 	// otherwise fallback to full template evaluation
-	asStr, err := EvaluateTemplate(env, context, template, allowedTopLevels)
+	asStr, err := EvaluateTemplate(env, context, template, nil)
 	return types.NewXText(asStr), err
 }
 
 // EvaluateExpression evalutes the passed in Excellent expression, returning the typed value it evaluates to,
 // which might be an error, e.g. "2 / 3" or "contact.fields.age"
-func EvaluateExpression(env utils.Environment, context types.XValue, expression string) types.XValue {
+func EvaluateExpression(env envs.Environment, context *types.XObject, expression string) types.XValue {
 	visitor := newEvaluationVisitor(env, context)
 	output, err := VisitExpression(expression, visitor)
 	if err != nil {
@@ -80,13 +91,13 @@ func EvaluateExpression(env utils.Environment, context types.XValue, expression 
 type visitor struct {
 	gen.BaseExcellent2Visitor
 
-	env      utils.Environment
-	resolver types.XValue
+	env     envs.Environment
+	context *types.XObject
 }
 
 // creates a new visitor for evaluation
-func newEvaluationVisitor(env utils.Environment, resolver types.XValue) *visitor {
-	return &visitor{env: env, resolver: resolver}
+func newEvaluationVisitor(env envs.Environment, context *types.XObject) *visitor {
+	return &visitor{env: env, context: context}
 }
 
 // Visit the top level parse tree
@@ -119,42 +130,74 @@ func (v *visitor) VisitNumberLiteral(ctx *gen.NumberLiteralContext) interface{} 
 	return types.RequireXNumberFromString(ctx.GetText())
 }
 
-// VisitDotLookup deals with lookups like foo.0 or foo.bar
-func (v *visitor) VisitDotLookup(ctx *gen.DotLookupContext) interface{} {
-	context := toXValue(v.Visit(ctx.Atom(0)))
-	if types.IsXError(context) {
-		return context
+// VisitContextReference deals with identifiers which are function names or root variables in the context
+func (v *visitor) VisitContextReference(ctx *gen.ContextReferenceContext) interface{} {
+	name := strings.ToLower(ctx.GetText())
+
+	// first of all try to look this up as a function
+	function := functions.Lookup(name)
+	if function != nil {
+		return toXValue(function)
 	}
 
-	lookup := ctx.Atom(1).GetText()
-	return lookupProperty(v.env, context, lookup)
+	value, exists := v.context.Get(name)
+	if !exists {
+		return types.NewXErrorf("context has no property '%s'", name)
+	}
+
+	return value
+}
+
+// VisitDotLookup deals with property lookups like foo.bar
+func (v *visitor) VisitDotLookup(ctx *gen.DotLookupContext) interface{} {
+	container := toXValue(v.Visit(ctx.Atom()))
+	if types.IsXError(container) {
+		return container
+	}
+
+	var lookup types.XText
+
+	if ctx.NAME() != nil {
+		lookup = types.NewXText(ctx.NAME().GetText())
+	} else {
+		lookup = types.NewXText(ctx.INTEGER().GetText())
+	}
+
+	return resolveLookup(v.env, container, lookup, lookupNotationDot)
+}
+
+// VisitArrayLookup deals with lookups such as foo[5] or foo["key with spaces"]
+func (v *visitor) VisitArrayLookup(ctx *gen.ArrayLookupContext) interface{} {
+	container := toXValue(v.Visit(ctx.Atom()))
+	if types.IsXError(container) {
+		return container
+	}
+
+	lookup := toXValue(v.Visit(ctx.Expression()))
+
+	return resolveLookup(v.env, container, lookup, lookupNotationArray)
 }
 
 // VisitFunctionCall deals with function calls like TITLE(foo.bar)
 func (v *visitor) VisitFunctionCall(ctx *gen.FunctionCallContext) interface{} {
-	functionName := strings.ToLower(ctx.Fnname().GetText())
-
-	var function functions.XFunction
-	var found bool
-
-	function, found = functions.XFUNCTIONS[functionName]
-	if !found {
-		return types.NewXErrorf("no function with name '%s'", functionName)
+	function := toXValue(v.Visit(ctx.Atom()))
+	if types.IsXError(function) {
+		return function
 	}
+
+	asFunction, isFunction := function.(types.XFunction)
+	if !isFunction {
+		return types.NewXErrorf("%s is not a function", ctx.Atom().GetText())
+	}
+
+	name := strings.ToLower(ctx.Atom().GetText())
 
 	var params []types.XValue
 	if ctx.Parameters() != nil {
 		params, _ = v.Visit(ctx.Parameters()).([]types.XValue)
 	}
 
-	val := function(v.env, params...)
-
-	// if function returned an error, wrap the error with the function name
-	if types.IsXError(val) {
-		return types.NewXErrorf("error calling %s: %s", strings.ToUpper(functionName), val.(types.XError).Error())
-	}
-
-	return val
+	return functions.Call(v.env, name, asFunction, params)
 }
 
 // VisitTrue deals with the `true` reserved word
@@ -172,37 +215,6 @@ func (v *visitor) VisitNull(ctx *gen.NullContext) interface{} {
 	return nil
 }
 
-// VisitArrayLookup deals with lookups such as foo[5] or foo["key with spaces"]
-func (v *visitor) VisitArrayLookup(ctx *gen.ArrayLookupContext) interface{} {
-	context := toXValue(v.Visit(ctx.Atom()))
-	if types.IsXError(context) {
-		return context
-	}
-
-	expression := toXValue(v.Visit(ctx.Expression()))
-
-	// if the resolved expression is a number, this is an array lookup
-	asNumber, isNumber := expression.(types.XNumber)
-	if isNumber {
-		return lookupIndex(v.env, context, asNumber)
-	}
-
-	// if not it is a property lookup so stringify the key
-	lookup, xerr := types.ToXText(v.env, expression)
-	if xerr != nil {
-		return xerr
-	}
-
-	return lookupProperty(v.env, context, lookup.Native())
-}
-
-// VisitContextReference deals with references to variables in the context such as "foo"
-func (v *visitor) VisitContextReference(ctx *gen.ContextReferenceContext) interface{} {
-	key := strings.ToLower(ctx.GetText())
-
-	return lookupProperty(v.env, v.resolver, key)
-}
-
 // VisitParentheses deals with expressions in parentheses such as (1+2)
 func (v *visitor) VisitParentheses(ctx *gen.ParenthesesContext) interface{} {
 	return v.Visit(ctx.Expression())
@@ -212,12 +224,7 @@ func (v *visitor) VisitParentheses(ctx *gen.ParenthesesContext) interface{} {
 func (v *visitor) VisitNegation(ctx *gen.NegationContext) interface{} {
 	arg := toXValue(v.Visit(ctx.Expression()))
 
-	number, xerr := types.ToXNumber(v.env, arg)
-	if xerr != nil {
-		return xerr
-	}
-
-	return types.NewXNumber(number.Native().Neg())
+	return operators.Negate(v.env, arg)
 }
 
 // VisitExponent deals with exponenets such as 5^5
@@ -225,16 +232,7 @@ func (v *visitor) VisitExponent(ctx *gen.ExponentContext) interface{} {
 	arg1 := toXValue(v.Visit(ctx.Expression(0)))
 	arg2 := toXValue(v.Visit(ctx.Expression(1)))
 
-	num1, xerr := types.ToXNumber(v.env, arg1)
-	if xerr != nil {
-		return xerr
-	}
-	num2, xerr := types.ToXNumber(v.env, arg2)
-	if xerr != nil {
-		return xerr
-	}
-
-	return types.NewXNumber(num1.Native().Pow(num2.Native()))
+	return operators.Exponent(v.env, arg1, arg2)
 }
 
 // VisitConcatenation deals with string concatenations like "foo" & "bar"
@@ -242,20 +240,7 @@ func (v *visitor) VisitConcatenation(ctx *gen.ConcatenationContext) interface{} 
 	arg1 := toXValue(v.Visit(ctx.Expression(0)))
 	arg2 := toXValue(v.Visit(ctx.Expression(1)))
 
-	str1, xerr := types.ToXText(v.env, arg1)
-	if xerr != nil {
-		return xerr
-	}
-	str2, xerr := types.ToXText(v.env, arg2)
-	if xerr != nil {
-		return xerr
-	}
-
-	var buffer strings.Builder
-	buffer.WriteString(str1.Native())
-	buffer.WriteString(str2.Native())
-
-	return types.NewXText(buffer.String())
+	return operators.Concatenate(v.env, arg1, arg2)
 }
 
 // VisitAdditionOrSubtraction deals with addition and subtraction like 5+5 and 5-3
@@ -263,47 +248,10 @@ func (v *visitor) VisitAdditionOrSubtraction(ctx *gen.AdditionOrSubtractionConte
 	arg1 := toXValue(v.Visit(ctx.Expression(0)))
 	arg2 := toXValue(v.Visit(ctx.Expression(1)))
 
-	num1, xerr := types.ToXNumber(v.env, arg1)
-	if xerr != nil {
-		return xerr
-	}
-	num2, xerr := types.ToXNumber(v.env, arg2)
-	if xerr != nil {
-		return xerr
-	}
-
 	if ctx.PLUS() != nil {
-		return types.NewXNumber(num1.Native().Add(num2.Native()))
+		return operators.Add(v.env, arg1, arg2)
 	}
-	return types.NewXNumber(num1.Native().Sub(num2.Native()))
-}
-
-// VisitEquality deals with equality or inequality tests 5 = 5 and 5 != 5
-func (v *visitor) VisitEquality(ctx *gen.EqualityContext) interface{} {
-	arg1 := toXValue(v.Visit(ctx.Expression(0)))
-	arg2 := toXValue(v.Visit(ctx.Expression(1)))
-
-	str1, xerr := types.ToXText(v.env, arg1)
-	if xerr != nil {
-		return xerr
-	}
-	str2, xerr := types.ToXText(v.env, arg2)
-	if xerr != nil {
-		return xerr
-	}
-
-	isEqual := str1.Equals(str2)
-
-	if ctx.EQ() != nil {
-		return types.NewXBoolean(isEqual)
-	}
-
-	return types.NewXBoolean(!isEqual)
-}
-
-// VisitAtomReference deals with visiting a single atom in our expression
-func (v *visitor) VisitAtomReference(ctx *gen.AtomReferenceContext) interface{} {
-	return v.Visit(ctx.Atom())
+	return operators.Subtract(v.env, arg1, arg2)
 }
 
 // VisitMultiplicationOrDivision deals with division and multiplication such as 5*5 or 5/2
@@ -311,25 +259,21 @@ func (v *visitor) VisitMultiplicationOrDivision(ctx *gen.MultiplicationOrDivisio
 	arg1 := toXValue(v.Visit(ctx.Expression(0)))
 	arg2 := toXValue(v.Visit(ctx.Expression(1)))
 
-	num1, xerr := types.ToXNumber(v.env, arg1)
-	if xerr != nil {
-		return xerr
-	}
-	num2, xerr := types.ToXNumber(v.env, arg2)
-	if xerr != nil {
-		return xerr
-	}
-
 	if ctx.TIMES() != nil {
-		return types.NewXNumber(num1.Native().Mul(num2.Native()))
+		return operators.Multiply(v.env, arg1, arg2)
 	}
+	return operators.Divide(v.env, arg1, arg2)
+}
 
-	// division!
-	if num2.Equals(types.XNumberZero) {
-		return types.NewXErrorf("division by zero")
+// VisitEquality deals with equality or inequality tests 5 = 5 and 5 != 5
+func (v *visitor) VisitEquality(ctx *gen.EqualityContext) interface{} {
+	arg1 := toXValue(v.Visit(ctx.Expression(0)))
+	arg2 := toXValue(v.Visit(ctx.Expression(1)))
+
+	if ctx.EQ() != nil {
+		return operators.Equal(v.env, arg1, arg2)
 	}
-
-	return types.NewXNumber(num1.Native().Div(num2.Native()))
+	return operators.NotEqual(v.env, arg1, arg2)
 }
 
 // VisitComparison deals with visiting a comparison between two values, such as 5<3 or 3>5
@@ -337,27 +281,21 @@ func (v *visitor) VisitComparison(ctx *gen.ComparisonContext) interface{} {
 	arg1 := toXValue(v.Visit(ctx.Expression(0)))
 	arg2 := toXValue(v.Visit(ctx.Expression(1)))
 
-	num1, xerr := types.ToXNumber(v.env, arg1)
-	if xerr != nil {
-		return xerr
-	}
-	num2, xerr := types.ToXNumber(v.env, arg2)
-	if xerr != nil {
-		return xerr
-	}
-
-	cmp := num1.Compare(num2)
-
 	switch {
 	case ctx.LT() != nil:
-		return types.NewXBoolean(cmp < 0)
+		return operators.LessThan(v.env, arg1, arg2)
 	case ctx.LTE() != nil:
-		return types.NewXBoolean(cmp <= 0)
+		return operators.LessThanOrEqual(v.env, arg1, arg2)
 	case ctx.GTE() != nil:
-		return types.NewXBoolean(cmp >= 0)
-	default: // ctx.GT() != nil
-		return types.NewXBoolean(cmp > 0)
+		return operators.GreaterThanOrEqual(v.env, arg1, arg2)
+	default:
+		return operators.GreaterThan(v.env, arg1, arg2)
 	}
+}
+
+// VisitAtomReference deals with visiting a single atom in our expression
+func (v *visitor) VisitAtomReference(ctx *gen.AtomReferenceContext) interface{} {
+	return v.Visit(ctx.Atom())
 }
 
 // VisitFunctionParameters deals with the parameters to a function call
@@ -381,35 +319,48 @@ func toXValue(val interface{}) types.XValue {
 	return asX
 }
 
-// lookup an index on the given value
-func lookupIndex(env utils.Environment, value types.XValue, index types.XNumber) types.XValue {
-	indexable, isIndexable := value.(types.XIndexable)
+type lookupNotation string
 
-	if !isIndexable || utils.IsNil(indexable) {
-		return types.NewXErrorf("%s is not indexable", value.Describe())
+const (
+	lookupNotationDot   lookupNotation = "dot"
+	lookupNotationArray lookupNotation = "array"
+)
+
+func resolveLookup(env envs.Environment, container types.XValue, lookup types.XValue, notation lookupNotation) types.XValue {
+	// if left-hand side is an array, then this is an index
+	array, isArray := container.(*types.XArray)
+	if isArray && array != nil {
+		index, xerr := types.ToInteger(env, lookup)
+		if xerr != nil {
+			return xerr
+		}
+
+		if index >= array.Count() || index < -array.Count() {
+			return types.NewXErrorf("index %d out of range for %d items", index, array.Count())
+		}
+		if index < 0 {
+			index += array.Count()
+		}
+		return array.Get(index)
 	}
 
-	indexAsInt, xerr := types.ToInteger(env, index)
-	if xerr != nil {
-		return xerr
+	// if left-hand side is an object, then this is a property lookup
+	object, isObject := container.(*types.XObject)
+	if isObject && object != nil {
+		property, xerr := types.ToXText(env, lookup)
+		if xerr != nil {
+			return xerr
+		}
+
+		value, exists := object.Get(property.Native())
+
+		// [] notation doesn't error for non-existent properties, . does
+		if !exists && notation == lookupNotationDot {
+			return types.NewXErrorf("%s has no property '%s'", types.Describe(container), property.Native())
+		}
+
+		return value
 	}
 
-	if indexAsInt >= indexable.Length() || indexAsInt < -indexable.Length() {
-		return types.NewXErrorf("index %d out of range for %d items", indexAsInt, indexable.Length())
-	}
-	if indexAsInt < 0 {
-		indexAsInt += indexable.Length()
-	}
-	return indexable.Index(indexAsInt)
-}
-
-// lookup a named property on the given value
-func lookupProperty(env utils.Environment, variable types.XValue, key string) types.XValue {
-	resolver, isResolver := variable.(types.XResolvable)
-
-	if !isResolver || utils.IsNil(resolver) {
-		return types.NewXErrorf("%s has no property '%s'", types.Describe(variable), key)
-	}
-
-	return resolver.Resolve(env, key)
+	return types.NewXErrorf("%s doesn't support lookups", types.Describe(container))
 }

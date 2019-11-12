@@ -7,13 +7,14 @@ import (
 
 	"github.com/nyaruka/gocommon/urns"
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent/types"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/utils"
 )
 
 func init() {
-	RegisterType(TypeMsg, readMsgInput)
+	registerType(TypeMsg, readMsgInput)
 }
 
 // TypeMsg is a constant for incoming messages
@@ -22,13 +23,15 @@ const TypeMsg string = "msg"
 // MsgInput is a message which can be used as input
 type MsgInput struct {
 	baseInput
+
 	urn         *flows.ContactURN
 	text        string
-	attachments flows.AttachmentList
+	attachments []utils.Attachment
+	externalID  string
 }
 
-// NewMsgInput creates a new user input based on a message
-func NewMsgInput(assets flows.SessionAssets, msg *flows.MsgIn, createdOn time.Time) (*MsgInput, error) {
+// NewMsg creates a new user input based on a message
+func NewMsg(assets flows.SessionAssets, msg *flows.MsgIn, createdOn time.Time) (*MsgInput, error) {
 	// load the channel
 	var channel *flows.Channel
 	if msg.Channel() != nil {
@@ -40,27 +43,48 @@ func NewMsgInput(assets flows.SessionAssets, msg *flows.MsgIn, createdOn time.Ti
 		urn:         flows.NewContactURN(msg.URN(), nil),
 		text:        msg.Text(),
 		attachments: msg.Attachments(),
+		externalID:  msg.ExternalID(),
 	}, nil
 }
 
-// Resolve resolves the given key when this input is referenced in an expression
-func (i *MsgInput) Resolve(env utils.Environment, key string) types.XValue {
-	switch strings.ToLower(key) {
-	case "urn":
-		return i.urn
-	case "text":
-		return types.NewXText(i.text)
-	case "attachments":
-		return i.attachments
+// Context returns the properties available in expressions
+//
+//   __default__:text -> the text and attachments
+//   uuid:text -> the UUID of the input
+//   created_on:datetime -> the creation date of the input
+//   channel:channel -> the channel that the input was received on
+//   urn:text -> the contact URN that the input was received on
+//   text:text -> the text part of the input
+//   attachments:[]text -> any attachments on the input
+//   external_id:text -> the external ID of the input
+//
+// @context input
+func (i *MsgInput) Context(env envs.Environment) map[string]types.XValue {
+	attachments := make([]types.XValue, len(i.attachments))
+
+	for i, attachment := range i.attachments {
+		attachments[i] = types.NewXText(string(attachment))
 	}
-	return i.baseInput.Resolve(env, key)
+
+	var urn types.XValue
+	if i.urn != nil {
+		urn = i.urn.ToXValue(env)
+	}
+
+	return map[string]types.XValue{
+		"__default__": types.NewXText(i.format()),
+		"type":        types.NewXText(i.type_),
+		"uuid":        types.NewXText(string(i.uuid)),
+		"created_on":  types.NewXDateTime(i.createdOn),
+		"channel":     flows.Context(env, i.channel),
+		"urn":         urn,
+		"text":        types.NewXText(i.text),
+		"attachments": types.NewXArray(attachments...),
+		"external_id": types.NewXText(i.externalID),
+	}
 }
 
-// Describe returns a representation of this type for error messages
-func (i *MsgInput) Describe() string { return "input" }
-
-// Reduce is called when this object needs to be reduced to a primitive
-func (i *MsgInput) Reduce(env utils.Environment) types.XPrimitive {
+func (i *MsgInput) format() string {
 	var parts []string
 	if i.text != "" {
 		parts = append(parts, i.text)
@@ -68,16 +92,9 @@ func (i *MsgInput) Reduce(env utils.Environment) types.XPrimitive {
 	for _, attachment := range i.attachments {
 		parts = append(parts, attachment.URL())
 	}
-	return types.NewXText(strings.Join(parts, "\n"))
+	return strings.Join(parts, "\n")
 }
 
-// ToXJSON is called when this type is passed to @(json(...))
-func (i *MsgInput) ToXJSON(env utils.Environment) types.XText {
-	return types.ResolveKeys(env, i, "uuid", "created_on", "channel", "type", "urn", "text", "attachments").ToXJSON(env)
-}
-
-var _ types.XValue = (*MsgInput)(nil)
-var _ types.XResolvable = (*MsgInput)(nil)
 var _ flows.Input = (*MsgInput)(nil)
 
 //------------------------------------------------------------------------------------------
@@ -86,9 +103,10 @@ var _ flows.Input = (*MsgInput)(nil)
 
 type msgInputEnvelope struct {
 	baseInputEnvelope
-	URN         urns.URN             `json:"urn" validate:"omitempty,urn"`
-	Text        string               `json:"text"`
-	Attachments flows.AttachmentList `json:"attachments,omitempty"`
+	URN         urns.URN           `json:"urn" validate:"omitempty,urn"`
+	Text        string             `json:"text"`
+	Attachments []utils.Attachment `json:"attachments,omitempty"`
+	ExternalID  string             `json:"external_id,omitempty"`
 }
 
 func readMsgInput(sessionAssets flows.SessionAssets, data json.RawMessage, missing assets.MissingCallback) (flows.Input, error) {
@@ -102,6 +120,7 @@ func readMsgInput(sessionAssets flows.SessionAssets, data json.RawMessage, missi
 		urn:         flows.NewContactURN(e.URN, nil),
 		text:        e.Text,
 		attachments: e.Attachments,
+		externalID:  e.ExternalID,
 	}
 
 	if err := i.unmarshal(sessionAssets, &e.baseInputEnvelope, missing); err != nil {
@@ -117,6 +136,7 @@ func (i *MsgInput) MarshalJSON() ([]byte, error) {
 		URN:         i.urn.URN(),
 		Text:        i.text,
 		Attachments: i.attachments,
+		ExternalID:  i.externalID,
 	}
 
 	i.marshal(&e.baseInputEnvelope)

@@ -16,6 +16,8 @@ func TestSnakify(t *testing.T) {
 		{"Hello World", "hello_world"},
 		{"hello_world", "hello_world"},
 		{"hello-world", "hello_world"},
+		{"_Hello World", "_hello_world"},
+		{"   Hello World    ", "hello_world"},
 		{"hi😀😃😄😁there", "hi_there"},
 		{"昨夜のコ", "昨夜のコ"},
 		{"this@isn't@email", "this_isn_t_email"},
@@ -42,7 +44,10 @@ func TestTokenizeString(t *testing.T) {
 		{"math+=×÷√∊", []string{"math", "+", "=", "×", "÷", "√", "∊"}},     // math symbols treated as individual tokens
 		{"emoji😄🏥👪👰😟🧟", []string{"emoji", "😄", "🏥", "👪", "👰", "😟", "🧟"}},   // emojis treated as individual tokens
 		{"👍🏿 👨🏼", []string{"👍", "🏿", "👨", "🏼"}},                            // tone modifiers treated as individual tokens
-		{"ℹ︎ ℹ️", []string{"ℹ", "ℹ"}},                                      // variation selectors ignored
+		{"ℹ ℹ️", []string{"ℹ", "ℹ️"}},                                      // variation selectors ignored
+		{"ยกเลิก sasa", []string{"ยกเลิก", "sasa"}},                        // Thai word means Cancelled
+		{"বাতিল sasa", []string{"বাতিল", "sasa"}},                          // Bangla word means Cancel
+		{"ထွက်သွား sasa", []string{"ထွက်သွား", "sasa"}},                    // Burmese word means exit
 	}
 	for _, test := range tokenizerTests {
 		assert.Equal(t, test.result, utils.TokenizeString(test.text), "unexpected result tokenizing '%s'", test.text)
@@ -80,4 +85,21 @@ func TestPrefixOverlap(t *testing.T) {
 
 func TestStringSlices(t *testing.T) {
 	assert.Equal(t, []string{"he", "hello", "world"}, utils.StringSlices("hello world", []int{0, 2, 0, 5, 6, 11}))
+}
+
+func TestStringSliceContains(t *testing.T) {
+	assert.False(t, utils.StringSliceContains(nil, "a", true))
+	assert.False(t, utils.StringSliceContains([]string{}, "a", true))
+	assert.False(t, utils.StringSliceContains([]string{"b", "c"}, "a", true))
+	assert.True(t, utils.StringSliceContains([]string{"b", "a", "c"}, "a", true))
+	assert.False(t, utils.StringSliceContains([]string{"b", "a", "c"}, "A", true))
+	assert.True(t, utils.StringSliceContains([]string{"b", "a", "c"}, "A", false))
+}
+
+func TestIndent(t *testing.T) {
+	assert.Equal(t, "", utils.Indent("", "  "))
+	assert.Equal(t, "  x", utils.Indent("x", "  "))
+	assert.Equal(t, "  x\n  y", utils.Indent("x\ny", "  "))
+	assert.Equal(t, "  x\n\n  y", utils.Indent("x\n\ny", "  "))
+	assert.Equal(t, ">>>x", utils.Indent("x", ">>>"))
 }

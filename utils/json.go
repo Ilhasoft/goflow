@@ -75,12 +75,6 @@ func JSONDecodeGeneric(data []byte) (interface{}, error) {
 	return asGeneric, decoder.Decode(&asGeneric)
 }
 
-// IsValidJSON determines whether the given bytes contain valid JSON, by trying to parse it
-func IsValidJSON(data []byte) bool {
-	var s interface{}
-	return json.Unmarshal(data, &s) == nil
-}
-
 // Typed is an interface of objects that are marshalled as typed envelopes
 type Typed interface {
 	Type() string
@@ -98,4 +92,25 @@ func ReadTypeFromJSON(data []byte) (string, error) {
 		return "", err
 	}
 	return t.Type, nil
+}
+
+// ExtractResponseJSON extracts a JSON body from an HTTP response trace
+func ExtractResponseJSON(response []byte) json.RawMessage {
+	parts := bytes.SplitN(response, []byte("\r\n\r\n"), 2)
+
+	// this response doesn't have a body
+	if len(parts) != 2 || len(parts[1]) == 0 {
+		return nil
+	}
+
+	body := parts[1]
+
+	// check if body is valid JSON and can be returned as is
+	if json.Valid(body) {
+		return body
+	}
+
+	// if not, treat body as text and encode as a JSON string
+	asString, _ := json.Marshal(string(body))
+	return asString
 }

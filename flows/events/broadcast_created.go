@@ -3,12 +3,13 @@ package events
 import (
 	"github.com/nyaruka/gocommon/urns"
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/utils"
 )
 
 func init() {
-	RegisterType(TypeBroadcastCreated, func() flows.Event { return &BroadcastCreatedEvent{} })
+	registerType(TypeBroadcastCreated, func() flows.Event { return &BroadcastCreatedEvent{} })
 }
 
 // TypeBroadcastCreated is a constant for outgoing message events
@@ -17,7 +18,7 @@ const TypeBroadcastCreated string = "broadcast_created"
 // BroadcastTranslation is the broadcast content in a particular language
 type BroadcastTranslation struct {
 	Text         string             `json:"text"`
-	Attachments  []flows.Attachment `json:"attachments,omitempty"`
+	Attachments  []utils.Attachment `json:"attachments,omitempty"`
 	QuickReplies []string           `json:"quick_replies,omitempty"`
 }
 
@@ -45,26 +46,25 @@ type BroadcastTranslation struct {
 //
 // @event broadcast_created
 type BroadcastCreatedEvent struct {
-	BaseEvent
+	baseEvent
 
-	Translations map[utils.Language]*BroadcastTranslation `json:"translations,min=1" validate:"dive"`
-	BaseLanguage utils.Language                           `json:"base_language" validate:"required"`
-	URNs         []urns.URN                               `json:"urns,omitempty" validate:"dive,urn"`
-	Contacts     []*flows.ContactReference                `json:"contacts,omitempty" validate:"dive"`
-	Groups       []*assets.GroupReference                 `json:"groups,omitempty" validate:"dive"`
+	Translations map[envs.Language]*BroadcastTranslation `json:"translations,min=1" validate:"dive"`
+	BaseLanguage envs.Language                           `json:"base_language" validate:"required"`
+	Groups       []*assets.GroupReference                `json:"groups,omitempty" validate:"dive"`
+	Contacts     []*flows.ContactReference               `json:"contacts,omitempty" validate:"dive"`
+	URNs         []urns.URN                              `json:"urns,omitempty" validate:"dive,urn"`
 }
 
-// NewBroadcastCreatedEvent creates a new outgoing msg event for the given recipients
-func NewBroadcastCreatedEvent(translations map[utils.Language]*BroadcastTranslation, baseLanguage utils.Language, urns []urns.URN, contacts []*flows.ContactReference, groups []*assets.GroupReference) *BroadcastCreatedEvent {
-	event := BroadcastCreatedEvent{
-		BaseEvent:    NewBaseEvent(TypeBroadcastCreated),
+// NewBroadcastCreated creates a new outgoing msg event for the given recipients
+func NewBroadcastCreated(translations map[envs.Language]*BroadcastTranslation, baseLanguage envs.Language, groups []*assets.GroupReference, contacts []*flows.ContactReference, urns []urns.URN) *BroadcastCreatedEvent {
+	return &BroadcastCreatedEvent{
+		baseEvent:    newBaseEvent(TypeBroadcastCreated),
 		Translations: translations,
 		BaseLanguage: baseLanguage,
-		URNs:         urns,
-		Contacts:     contacts,
 		Groups:       groups,
+		Contacts:     contacts,
+		URNs:         urns,
 	}
-	return &event
 }
 
 var _ flows.Event = (*BroadcastCreatedEvent)(nil)

@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	RegisterType(TypeRunResultChanged, func() flows.Event { return &RunResultChangedEvent{} })
+	registerType(TypeRunResultChanged, func() flows.Event { return &RunResultChangedEvent{} })
 }
 
 // TypeRunResultChanged is the type of our run result event
@@ -30,20 +30,20 @@ const TypeRunResultChanged string = "run_result_changed"
 //
 // @event run_result_changed
 type RunResultChangedEvent struct {
-	BaseEvent
+	baseEvent
 
 	Name              string          `json:"name" validate:"required"`
 	Value             string          `json:"value"`
 	Category          string          `json:"category"`
 	CategoryLocalized string          `json:"category_localized,omitempty"`
-	Input             *string         `json:"input,omitempty"`
+	Input             string          `json:"input,omitempty"`
 	Extra             json.RawMessage `json:"extra,omitempty"`
 }
 
-// NewRunResultChangedEvent returns a new save result event for the passed in values
-func NewRunResultChangedEvent(result *flows.Result) *RunResultChangedEvent {
+// NewRunResultChanged returns a new save result event for the passed in values
+func NewRunResultChanged(result *flows.Result) *RunResultChangedEvent {
 	return &RunResultChangedEvent{
-		BaseEvent:         NewBaseEvent(TypeRunResultChanged),
+		baseEvent:         newBaseEvent(TypeRunResultChanged),
 		Name:              result.Name,
 		Value:             result.Value,
 		Category:          result.Category,

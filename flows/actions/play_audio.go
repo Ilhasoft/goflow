@@ -7,10 +7,11 @@ import (
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/events"
 	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/utils/uuids"
 )
 
 func init() {
-	RegisterType(TypePlayAudio, func() flows.Action { return &PlayAudioAction{} })
+	registerType(TypePlayAudio, func() flows.Action { return &PlayAudioAction{} })
 }
 
 // TypePlayAudio is the type for the play audio action
@@ -28,16 +29,16 @@ const TypePlayAudio string = "play_audio"
 //
 // @action play_audio
 type PlayAudioAction struct {
-	BaseAction
+	baseAction
 	voiceAction
 
-	AudioURL string `json:"audio_url" validate:"required"`
+	AudioURL string `json:"audio_url" validate:"required" engine:"localized,evaluated"`
 }
 
-// NewPlayAudioAction creates a new play message action
-func NewPlayAudioAction(uuid flows.ActionUUID, audioURL string) *PlayAudioAction {
+// NewPlayAudio creates a new play message action
+func NewPlayAudio(uuid flows.ActionUUID, audioURL string) *PlayAudioAction {
 	return &PlayAudioAction{
-		BaseAction: NewBaseAction(TypePlayAudio, uuid),
+		baseAction: newBaseAction(TypePlayAudio, uuid),
 		AudioURL:   audioURL,
 	}
 }
@@ -45,16 +46,16 @@ func NewPlayAudioAction(uuid flows.ActionUUID, audioURL string) *PlayAudioAction
 // Execute runs this action
 func (a *PlayAudioAction) Execute(run flows.FlowRun, step flows.Step, logModifier flows.ModifierCallback, logEvent flows.EventCallback) error {
 	// localize and evaluate audio URL
-	localizedAudioURL := run.GetText(utils.UUID(a.UUID()), "audio_url", a.AudioURL)
+	localizedAudioURL := run.GetText(uuids.UUID(a.UUID()), "audio_url", a.AudioURL)
 	evaluatedAudioURL, err := run.EvaluateTemplate(localizedAudioURL)
 	if err != nil {
-		logEvent(events.NewErrorEvent(err))
+		logEvent(events.NewError(err))
 		return nil
 	}
 
 	evaluatedAudioURL = strings.TrimSpace(evaluatedAudioURL)
 	if evaluatedAudioURL == "" {
-		logEvent(events.NewErrorEventf("audio URL evaluated to empty, skipping"))
+		logEvent(events.NewErrorf("audio URL evaluated to empty, skipping"))
 		return nil
 	}
 
@@ -62,26 +63,9 @@ func (a *PlayAudioAction) Execute(run flows.FlowRun, step flows.Step, logModifie
 	connection := run.Session().Trigger().Connection()
 
 	// if we have an audio URL, turn it into a message
-	attachments := []flows.Attachment{flows.Attachment(fmt.Sprintf("audio:%s", evaluatedAudioURL))}
-	msg := flows.NewMsgOut(connection.URN(), connection.Channel(), "", attachments, nil)
-	logEvent(events.NewIVRCreatedEvent(msg))
+	attachments := []utils.Attachment{utils.Attachment(fmt.Sprintf("audio:%s", evaluatedAudioURL))}
+	msg := flows.NewMsgOut(connection.URN(), connection.Channel(), "", attachments, nil, nil)
+	logEvent(events.NewIVRCreated(msg))
 
 	return nil
-}
-
-// Inspect inspects this object and any children
-func (a *PlayAudioAction) Inspect(inspect func(flows.Inspectable)) {
-	inspect(a)
-}
-
-// EnumerateTemplates enumerates all expressions on this object and its children
-func (a *PlayAudioAction) EnumerateTemplates(localization flows.Localization, include func(string)) {
-	include(a.AudioURL)
-	flows.EnumerateTemplateTranslations(localization, a, "audio_url", include)
-}
-
-// RewriteTemplates rewrites all templates on this object and its children
-func (a *PlayAudioAction) RewriteTemplates(localization flows.Localization, rewrite func(string) string) {
-	a.AudioURL = rewrite(a.AudioURL)
-	flows.RewriteTemplateTranslations(localization, a, "audio_url", rewrite)
 }

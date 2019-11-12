@@ -12,7 +12,7 @@ package mobile
 // cd $GOPATH/src/github.com/nyaruka/goflow
 // GO111MODULE=on go mod vendor
 // GO111MODULE=off go get golang.org/x/mobile/cmd/gomobile
-// $GOPATH/bin/gomobile init
+// GO111MODULE=off $GOPATH/bin/gomobile init
 // GO111MODULE=off gomobile bind -target android -javapkg=com.nyaruka.goflow -o mobile/goflow.aar github.com/nyaruka/goflow/mobile
 
 import (
@@ -22,16 +22,22 @@ import (
 	"github.com/nyaruka/gocommon/urns"
 	"github.com/nyaruka/goflow/assets"
 	"github.com/nyaruka/goflow/assets/static"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/definition"
 	"github.com/nyaruka/goflow/flows/engine"
 	"github.com/nyaruka/goflow/flows/resumes"
+	"github.com/nyaruka/goflow/flows/routers/waits"
 	"github.com/nyaruka/goflow/flows/triggers"
-	"github.com/nyaruka/goflow/flows/waits"
 	"github.com/nyaruka/goflow/utils"
 
 	"github.com/Masterminds/semver"
 )
+
+// CurrentSpecVersion returns the current flow spec version
+func CurrentSpecVersion() string {
+	return definition.CurrentSpecVersion.String()
+}
 
 // IsSpecVersionSupported returns whether the given flow spec version is supported
 func IsSpecVersionSupported(ver string) bool {
@@ -39,12 +45,13 @@ func IsSpecVersionSupported(ver string) bool {
 	if err != nil {
 		return false
 	}
+
 	return definition.IsSpecVersionSupported(v)
 }
 
 // Environment defines the environment for expression evaluation etc
 type Environment struct {
-	target utils.Environment
+	target envs.Environment
 }
 
 // NewEnvironment creates a new environment.
@@ -54,20 +61,20 @@ func NewEnvironment(dateFormat string, timeFormat string, timezone string, defau
 		return nil, err
 	}
 
-	langs := make([]utils.Language, allowedLanguages.Length())
-	for l := 0; l < allowedLanguages.Length(); l++ {
-		langs[l] = utils.Language(allowedLanguages.Get(l))
+	langs := make([]envs.Language, allowedLanguages.Length())
+	for i := 0; i < allowedLanguages.Length(); i++ {
+		langs[i] = envs.Language(allowedLanguages.Get(i))
 	}
 
 	return &Environment{
-		target: utils.NewEnvironmentBuilder().
-			WithDateFormat(utils.DateFormat(dateFormat)).
-			WithTimeFormat(utils.TimeFormat(timeFormat)).
+		target: envs.NewBuilder().
+			WithDateFormat(envs.DateFormat(dateFormat)).
+			WithTimeFormat(envs.TimeFormat(timeFormat)).
 			WithTimezone(tz).
-			WithDefaultLanguage(utils.Language(defaultLanguage)).
+			WithDefaultLanguage(envs.Language(defaultLanguage)).
 			WithAllowedLanguages(langs).
-			WithDefaultCountry(utils.Country(defaultCountry)).
-			WithRedactionPolicy(utils.RedactionPolicy(redactionPolicy)).
+			WithDefaultCountry(envs.Country(defaultCountry)).
+			WithRedactionPolicy(envs.RedactionPolicy(redactionPolicy)).
 			Build(),
 	}, nil
 }
@@ -93,7 +100,7 @@ type SessionAssets struct {
 
 // NewSessionAssets creates a new session assets
 func NewSessionAssets(source *AssetsSource) (*SessionAssets, error) {
-	s, err := engine.NewSessionAssets(source.target)
+	s, err := engine.NewSessionAssets(source.target, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +115,7 @@ type Contact struct {
 // NewEmptyContact creates a new contact
 func NewEmptyContact(sa *SessionAssets) *Contact {
 	return &Contact{
-		target: flows.NewEmptyContact(sa.target, "", utils.NilLanguage, nil),
+		target: flows.NewEmptyContact(sa.target, "", envs.NilLanguage, nil),
 	}
 }
 
@@ -119,11 +126,11 @@ type MsgIn struct {
 
 // NewMsgIn creates a new incoming message
 func NewMsgIn(uuid string, text string, attachments *StringSlice) *MsgIn {
-	var convertedAttachments []flows.Attachment
+	var convertedAttachments []utils.Attachment
 	if attachments != nil {
-		convertedAttachments = make([]flows.Attachment, attachments.Length())
-		for a := 0; a < attachments.Length(); a++ {
-			convertedAttachments[a] = flows.Attachment(attachments.Get(a))
+		convertedAttachments = make([]utils.Attachment, attachments.Length())
+		for i := 0; i < attachments.Length(); i++ {
+			convertedAttachments[i] = utils.Attachment(attachments.Get(i))
 		}
 	}
 
@@ -164,7 +171,7 @@ type Trigger struct {
 func NewManualTrigger(environment *Environment, contact *Contact, flow *FlowReference) *Trigger {
 	flowRef := assets.NewFlowReference(assets.FlowUUID(flow.uuid), flow.name)
 	return &Trigger{
-		target: triggers.NewManualTrigger(environment.target, flowRef, contact.target, nil),
+		target: triggers.NewManual(environment.target, flowRef, contact.target, nil),
 	}
 }
 
@@ -175,7 +182,7 @@ type Resume struct {
 
 // NewMsgResume creates a new message resume
 func NewMsgResume(environment *Environment, contact *Contact, msg *MsgIn) *Resume {
-	var e utils.Environment
+	var e envs.Environment
 	if environment != nil {
 		e = environment.target
 	}
@@ -185,7 +192,7 @@ func NewMsgResume(environment *Environment, contact *Contact, msg *MsgIn) *Resum
 	}
 
 	return &Resume{
-		target: resumes.NewMsgResume(e, c, msg.target),
+		target: resumes.NewMsg(e, c, msg.target),
 	}
 }
 
@@ -255,15 +262,6 @@ func (s *Session) Assets() *SessionAssets {
 	return &SessionAssets{target: s.target.Assets()}
 }
 
-// Start starts this session using the given trigger
-func (s *Session) Start(trigger *Trigger) (*Sprint, error) {
-	sprint, err := s.target.Start(trigger.target)
-	if err != nil {
-		return nil, err
-	}
-	return &Sprint{target: sprint}, nil
-}
-
 // Resume resumes this session
 func (s *Session) Resume(resume *Resume) (*Sprint, error) {
 	sprint, err := s.target.Resume(resume.target)
@@ -299,7 +297,7 @@ func (h *Hint) Type() string {
 }
 
 type Wait struct {
-	target flows.Wait
+	target flows.ActivatedWait
 }
 
 func (w *Wait) Type() string {
@@ -307,7 +305,7 @@ func (w *Wait) Type() string {
 }
 
 func (w *Wait) Hint() *Hint {
-	asMsgWait, isMsgWait := w.target.(*waits.MsgWait)
+	asMsgWait, isMsgWait := w.target.(*waits.ActivatedMsgWait)
 	if isMsgWait && asMsgWait.Hint() != nil {
 		return &Hint{target: asMsgWait.Hint()}
 	}
@@ -318,15 +316,23 @@ type Engine struct {
 	target flows.Engine
 }
 
-func NewEngine(httpUserAgent string) *Engine {
+func NewEngine() *Engine {
 	return &Engine{
-		target: engine.NewBuilder().WithDefaultUserAgent(httpUserAgent).Build(),
+		target: engine.NewBuilder().Build(),
 	}
 }
 
 // NewSession creates a new session
-func (e *Engine) NewSession(sa *SessionAssets) *Session {
-	return &Session{target: e.target.NewSession(sa.target)}
+func (e *Engine) NewSession(sa *SessionAssets, trigger *Trigger) (*SessionAndSprint, error) {
+	session, sprint, err := e.target.NewSession(sa.target, trigger.target)
+	if err != nil {
+		return nil, err
+	}
+
+	return &SessionAndSprint{
+		session: &Session{target: session},
+		sprint:  &Sprint{target: sprint},
+	}, nil
 }
 
 // ReadSession reads an existing session from JSON
@@ -336,4 +342,18 @@ func (e *Engine) ReadSession(a *SessionAssets, data string) (*Session, error) {
 		return nil, err
 	}
 	return &Session{target: s}, nil
+}
+
+// SessionAndSprint holds a session and a sprint.. because a Java method can't return two values
+type SessionAndSprint struct {
+	session *Session
+	sprint  *Sprint
+}
+
+func (ss *SessionAndSprint) Session() *Session {
+	return ss.session
+}
+
+func (ss *SessionAndSprint) Sprint() *Sprint {
+	return ss.sprint
 }

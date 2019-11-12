@@ -4,59 +4,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/nyaruka/gocommon/urns"
 	"github.com/nyaruka/goflow/assets"
 	"github.com/nyaruka/goflow/contactql"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent/types"
 	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/utils/dates"
+	"github.com/nyaruka/goflow/utils/uuids"
 
 	"github.com/pkg/errors"
 )
 
-// Contact represents a person who is interacting with the flow. It renders as the person's name
-// (or perferred URN if name isn't set) in a template, and has the following properties which can be accessed:
-//
-//  * `uuid` the UUID of the contact
-//  * `name` the full name of the contact
-//  * `first_name` the first name of the contact
-//  * `language` the [ISO-639-3](http://www-01.sil.org/iso639-3/) language code of the contact
-//  * `timezone` the timezone name of the contact
-//  * `created_on` the datetime when the contact was created
-//  * `urns` all [URNs](#context:urn) the contact has set
-//  * `urns.[scheme]` all the [URNs](#context:urn) the contact has set for the particular URN scheme
-//  * `urn` shorthand for `@(format_urn(c.urns.0))`, i.e. the contact's preferred [URN](#context:urn) in friendly formatting
-//  * `groups` all the [groups](#context:group) that the contact belongs to
-//  * `fields` all the custom contact fields the contact has set
-//  * `fields.[snaked_field_name]` the value of the specific field
-//  * `channel` shorthand for `contact.urns[0].channel`, i.e. the [channel](#context:channel) of the contact's preferred URN
-//
-// Examples:
-//
-//   @contact -> Ryan Lewis
-//   @contact.name -> Ryan Lewis
-//   @contact.first_name -> Ryan
-//   @contact.language -> eng
-//   @contact.timezone -> America/Guayaquil
-//   @contact.created_on -> 2018-06-20T11:40:30.123456Z
-//   @contact.urns -> tel:+12065551212, twitterid:54784326227#nyaruka, mailto:foo@bar.com
-//   @(contact.urns[0]) -> tel:+12065551212
-//   @contact.urns.tel -> tel:+12065551212
-//   @(contact.urns.mailto[0]) -> mailto:foo@bar.com
-//   @contact.urn -> tel:+12065551212
-//   @contact.groups -> Testers, Males
-//   @contact.fields -> activation_token: AACC55\nage: 23\ngender: Male\njoin_date: 2017-12-02T00:00:00.000000-02:00\nnot_set:\x20
-//   @contact.fields.activation_token -> AACC55
-//   @contact.fields.gender -> Male
-//
-// @context contact
+// Contact represents a person who is interacting with the flow
 type Contact struct {
 	uuid      ContactUUID
 	id        ContactID
 	name      string
-	language  utils.Language
+	language  envs.Language
 	timezone  *time.Location
 	createdOn time.Time
 	urns      URNList
@@ -73,7 +40,7 @@ func NewContact(
 	uuid ContactUUID,
 	id ContactID,
 	name string,
-	language utils.Language,
+	language envs.Language,
 	timezone *time.Location,
 	createdOn time.Time,
 	urns []urns.URN,
@@ -110,13 +77,13 @@ func NewContact(
 }
 
 // NewEmptyContact creates a new empy contact with the passed in name, language and location
-func NewEmptyContact(sa SessionAssets, name string, language utils.Language, timezone *time.Location) *Contact {
+func NewEmptyContact(sa SessionAssets, name string, language envs.Language, timezone *time.Location) *Contact {
 	return &Contact{
-		uuid:      ContactUUID(utils.NewUUID()),
+		uuid:      ContactUUID(uuids.New()),
 		name:      name,
 		language:  language,
 		timezone:  timezone,
-		createdOn: utils.Now(),
+		createdOn: dates.Now(),
 		urns:      URNList{},
 		groups:    NewGroupList([]*Group{}),
 		fields:    make(FieldValues),
@@ -158,10 +125,10 @@ func (c *Contact) UUID() ContactUUID { return c.uuid }
 func (c *Contact) ID() ContactID { return c.id }
 
 // SetLanguage sets the language for this contact
-func (c *Contact) SetLanguage(lang utils.Language) { c.language = lang }
+func (c *Contact) SetLanguage(lang envs.Language) { c.language = lang }
 
 // Language gets the language for this contact
-func (c *Contact) Language() utils.Language { return c.language }
+func (c *Contact) Language() envs.Language { return c.language }
 
 // SetTimezone sets the timezone of this contact
 func (c *Contact) SetTimezone(tz *time.Location) {
@@ -210,11 +177,11 @@ func (c *Contact) HasURN(urn urns.URN) bool {
 	return false
 }
 
-// Groups returns the groups that this contact belongs to
-func (c *Contact) Groups() *GroupList { return c.groups }
-
 // Fields returns this contact's field values
 func (c *Contact) Fields() FieldValues { return c.fields }
+
+// Groups returns the groups that this contact belongs to
+func (c *Contact) Groups() *GroupList { return c.groups }
 
 // Reference returns a reference to this contact
 func (c *Contact) Reference() *ContactReference {
@@ -225,14 +192,14 @@ func (c *Contact) Reference() *ContactReference {
 }
 
 // Format returns a friendly string version of this contact depending on what fields are set
-func (c *Contact) Format(env utils.Environment) string {
+func (c *Contact) Format(env envs.Environment) string {
 	// if contact has a name set, use that
 	if c.name != "" {
 		return c.name
 	}
 
 	// otherwise use either id or the higest priority URN depending on the env
-	if env.RedactionPolicy() == utils.RedactionPolicyURNs {
+	if env.RedactionPolicy() == envs.RedactionPolicyURNs {
 		return strconv.Itoa(int(c.id))
 	}
 	if len(c.urns) > 0 {
@@ -242,60 +209,54 @@ func (c *Contact) Format(env utils.Environment) string {
 	return ""
 }
 
-// Resolve resolves the given key when this contact is referenced in an expression
-func (c *Contact) Resolve(env utils.Environment, key string) types.XValue {
-	switch strings.ToLower(key) {
-	case "uuid":
-		return types.NewXText(string(c.uuid))
-	case "id":
-		return types.NewXNumberFromInt(int(c.id))
-	case "name":
-		return types.NewXText(c.name)
-	case "first_name":
-		names := utils.TokenizeString(c.name)
-		if len(names) >= 1 {
-			return types.NewXText(names[0])
-		}
-		return nil
-	case "language":
-		return types.NewXText(string(c.language))
-	case "timezone":
-		if c.timezone != nil {
-			return types.NewXText(c.timezone.String())
-		}
-		return nil
-	case "created_on":
-		return types.NewXDateTime(c.createdOn)
-	case "urns":
-		return c.urns
-	case "urn":
-		return c.PreferredURN()
-	case "groups":
-		return c.groups
-	case "fields":
-		return c.fields
-	case "channel":
-		return c.PreferredChannel()
+// Context returns the properties available in expressions
+//
+//   __default__:text -> the name or URN
+//   uuid:text -> the UUID of the contact
+//   id:text -> the numeric ID of the contact
+//   first_name:text -> the first name of the contact
+//   name:text -> the name of the contact
+//   language:text -> the language of the contact as 3-letter ISO code
+//   created_on:datetime -> the creation date of the contact
+//   urns:[]text -> the URNs belonging to the contact
+//   urn:text -> the preferred URN of the contact
+//   groups:[]group -> the groups the contact belongs to
+//   fields:fields -> the custom field values of the contact
+//   channel:channel -> the preferred channel of the contact
+//
+// @context contact
+func (c *Contact) Context(env envs.Environment) map[string]types.XValue {
+	var urn, timezone types.XValue
+	if c.timezone != nil {
+		timezone = types.NewXText(c.timezone.String())
+	}
+	preferredURN := c.PreferredURN()
+	if preferredURN != nil {
+		urn = preferredURN.ToXValue(env)
 	}
 
-	return types.NewXResolveError(c, key)
+	var firstName types.XValue
+	names := utils.TokenizeString(c.name)
+	if len(names) >= 1 {
+		firstName = types.NewXText(names[0])
+	}
+
+	return map[string]types.XValue{
+		"__default__": types.NewXText(c.Format(env)),
+		"uuid":        types.NewXText(string(c.uuid)),
+		"id":          types.NewXText(strconv.Itoa(int(c.id))),
+		"name":        types.NewXText(c.name),
+		"first_name":  firstName,
+		"language":    types.NewXText(string(c.language)),
+		"timezone":    timezone,
+		"created_on":  types.NewXDateTime(c.createdOn),
+		"urns":        c.urns.ToXValue(env),
+		"urn":         urn,
+		"groups":      c.groups.ToXValue(env),
+		"fields":      Context(env, c.Fields()),
+		"channel":     Context(env, c.PreferredChannel()),
+	}
 }
-
-// Describe returns a representation of this type for error messages
-func (c *Contact) Describe() string { return "contact" }
-
-// Reduce is called when this object needs to be reduced to a primitive
-func (c *Contact) Reduce(env utils.Environment) types.XPrimitive {
-	return types.NewXText(c.Format(env))
-}
-
-// ToXJSON is called when this type is passed to @(json(...))
-func (c *Contact) ToXJSON(env utils.Environment) types.XText {
-	return types.ResolveKeys(env, c, "uuid", "name", "language", "timezone", "created_on", "urns", "groups", "fields", "channel").ToXJSON(env)
-}
-
-var _ types.XValue = (*Contact)(nil)
-var _ types.XResolvable = (*Contact)(nil)
 
 // Destination is a sendable channel and URN pair
 type Destination struct {
@@ -356,6 +317,12 @@ func (c *Contact) UpdatePreferredChannel(channel *Channel) bool {
 				urn.SetChannel(channel)
 			}
 
+			// If URN doesn't have a channel and is a scheme supported by the channel, then we can set its
+			// channel. This may result in unsendable URN/channel pairing but can't do much about that.
+			if urn.Channel() == nil && channel.SupportsScheme(urn.URN().Scheme()) {
+				urn.SetChannel(channel)
+			}
+
 			// move any URNs with this channel to the front of the list
 			if urn.Channel() == channel {
 				priorityURNs = append(priorityURNs, urn)
@@ -371,7 +338,7 @@ func (c *Contact) UpdatePreferredChannel(channel *Channel) bool {
 }
 
 // ReevaluateDynamicGroups reevaluates membership of all dynamic groups for this contact
-func (c *Contact) ReevaluateDynamicGroups(env utils.Environment, allGroups *GroupAssets) ([]*Group, []*Group, []error) {
+func (c *Contact) ReevaluateDynamicGroups(env envs.Environment, allGroups *GroupAssets, allFields *FieldAssets) ([]*Group, []*Group, []error) {
 	added := make([]*Group, 0)
 	removed := make([]*Group, 0)
 	errors := make([]error, 0)
@@ -381,7 +348,7 @@ func (c *Contact) ReevaluateDynamicGroups(env utils.Environment, allGroups *Grou
 			continue
 		}
 
-		qualifies, err := group.CheckDynamicMembership(env, c)
+		qualifies, err := group.CheckDynamicMembership(env, c, allFields)
 		if err != nil {
 			errors = append(errors, err)
 		} else if qualifies {
@@ -398,50 +365,38 @@ func (c *Contact) ReevaluateDynamicGroups(env utils.Environment, allGroups *Grou
 	return added, removed, errors
 }
 
-// ResolveQueryKey resolves a contact query search key for this contact
-func (c *Contact) ResolveQueryKey(env utils.Environment, key string) []interface{} {
-	switch key {
-	case "name":
-		if c.name != "" {
-			return []interface{}{c.name}
-		}
-		return nil
-	case "language":
-		if c.language != utils.NilLanguage {
-			return []interface{}{string(c.language)}
-		}
-		return nil
-	case "created_on":
-		return []interface{}{c.createdOn}
-	}
-
-	// try as a URN scheme
-	if urns.IsValidScheme(key) {
-		if env.RedactionPolicy() != utils.RedactionPolicyURNs {
-			urnsWithScheme := c.urns.WithScheme(key)
-			vals := make([]interface{}, len(urnsWithScheme))
-			for u := range urnsWithScheme {
-				vals[u] = string(urnsWithScheme[u].URN())
+// QueryProperty resolves a contact query search key for this contact
+func (c *Contact) QueryProperty(env envs.Environment, key string, propType contactql.PropertyType) []interface{} {
+	if propType == contactql.PropertyTypeAttribute {
+		switch key {
+		case contactql.AttributeName:
+			if c.name != "" {
+				return []interface{}{c.name}
 			}
-			return vals
+			return nil
+		case contactql.AttributeLanguage:
+			if c.language != envs.NilLanguage {
+				return []interface{}{string(c.language)}
+			}
+			return nil
+		case contactql.AttributeCreatedOn:
+			return []interface{}{c.createdOn}
+		default:
+			return nil
 		}
-		return nil
+	} else if propType == contactql.PropertyTypeScheme {
+		urnsWithScheme := c.urns.WithScheme(key)
+		vals := make([]interface{}, len(urnsWithScheme))
+		for i := range urnsWithScheme {
+			vals[i] = string(urnsWithScheme[i].URN())
+		}
+		return vals
 	}
 
 	// try as a contact field
-	var nativeValue interface{}
-
-	switch typed := c.fields[key].TypedValue().(type) {
-	case nil:
+	nativeValue := c.fields[key].QueryValue()
+	if nativeValue == nil {
 		return nil
-	case LocationPath:
-		nativeValue = typed.Name()
-	case types.XText:
-		nativeValue = typed.Native()
-	case types.XNumber:
-		nativeValue = typed.Native()
-	case types.XDateTime:
-		nativeValue = typed.Native()
 	}
 
 	return []interface{}{nativeValue}
@@ -489,7 +444,7 @@ type contactEnvelope struct {
 	UUID      ContactUUID              `json:"uuid" validate:"required,uuid4"`
 	ID        ContactID                `json:"id,omitempty"`
 	Name      string                   `json:"name,omitempty"`
-	Language  utils.Language           `json:"language,omitempty"`
+	Language  envs.Language            `json:"language,omitempty"`
 	Timezone  string                   `json:"timezone,omitempty"`
 	CreatedOn time.Time                `json:"created_on" validate:"required"`
 	URNs      []urns.URN               `json:"urns,omitempty" validate:"dive,urn"`
@@ -536,7 +491,7 @@ func ReadContact(sa SessionAssets, data json.RawMessage, missing assets.MissingC
 		for _, g := range envelope.Groups {
 			group := sa.Groups().Get(g.UUID)
 			if group == nil {
-				missing(g)
+				missing(g, nil)
 			} else {
 				groups = append(groups, group)
 			}
@@ -567,8 +522,8 @@ func (c *Contact) MarshalJSON() ([]byte, error) {
 	}
 
 	ce.Groups = make([]*assets.GroupReference, c.groups.Count())
-	for g, group := range c.groups.All() {
-		ce.Groups[g] = group.Reference()
+	for i, group := range c.groups.All() {
+		ce.Groups[i] = group.Reference()
 	}
 
 	ce.Fields = make(map[string]*Value)

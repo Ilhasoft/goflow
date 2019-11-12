@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	RegisterType(TypeSessionTriggered, func() flows.Event { return &SessionTriggeredEvent{} })
+	registerType(TypeSessionTriggered, func() flows.Event { return &SessionTriggeredEvent{} })
 }
 
 // TypeSessionTriggered is the type of our session triggered event
@@ -45,25 +45,27 @@ const TypeSessionTriggered string = "session_triggered"
 //
 // @event session_triggered
 type SessionTriggeredEvent struct {
-	BaseEvent
+	baseEvent
 
 	Flow          *assets.FlowReference     `json:"flow" validate:"required"`
-	URNs          []urns.URN                `json:"urns,omitempty" validate:"dive,urn"`
-	Contacts      []*flows.ContactReference `json:"contacts,omitempty" validate:"dive"`
 	Groups        []*assets.GroupReference  `json:"groups,omitempty" validate:"dive"`
+	Contacts      []*flows.ContactReference `json:"contacts,omitempty" validate:"dive"`
+	ContactQuery  string                    `json:"contact_query,omitempty"`
 	CreateContact bool                      `json:"create_contact,omitempty"`
+	URNs          []urns.URN                `json:"urns,omitempty" validate:"dive,urn"`
 	RunSummary    json.RawMessage           `json:"run_summary"`
 }
 
-// NewSessionTriggeredEvent returns a new session triggered event
-func NewSessionTriggeredEvent(flow *assets.FlowReference, urns []urns.URN, contacts []*flows.ContactReference, groups []*assets.GroupReference, createContact bool, runSummary json.RawMessage) *SessionTriggeredEvent {
+// NewSessionTriggered returns a new session triggered event
+func NewSessionTriggered(flow *assets.FlowReference, groups []*assets.GroupReference, contacts []*flows.ContactReference, contactQuery string, createContact bool, urns []urns.URN, runSummary json.RawMessage) *SessionTriggeredEvent {
 	return &SessionTriggeredEvent{
-		BaseEvent:     NewBaseEvent(TypeSessionTriggered),
+		baseEvent:     newBaseEvent(TypeSessionTriggered),
 		Flow:          flow,
-		URNs:          urns,
-		Contacts:      contacts,
 		Groups:        groups,
+		Contacts:      contacts,
+		ContactQuery:  contactQuery,
 		CreateContact: createContact,
+		URNs:          urns,
 		RunSummary:    runSummary,
 	}
 }

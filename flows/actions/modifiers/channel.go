@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/events"
 	"github.com/nyaruka/goflow/utils"
 )
 
 func init() {
-	RegisterType(TypeChannel, readChannelModifier)
+	registerType(TypeChannel, readChannelModifier)
 }
 
 // TypeChannel is the type of our channel modifier
@@ -23,8 +24,8 @@ type ChannelModifier struct {
 	channel *flows.Channel
 }
 
-// NewChannelModifier creates a new channel modifier
-func NewChannelModifier(channel *flows.Channel) *ChannelModifier {
+// NewChannel creates a new channel modifier
+func NewChannel(channel *flows.Channel) *ChannelModifier {
 	return &ChannelModifier{
 		baseModifier: newBaseModifier(TypeChannel),
 		channel:      channel,
@@ -32,10 +33,10 @@ func NewChannelModifier(channel *flows.Channel) *ChannelModifier {
 }
 
 // Apply applies this modification to the given contact
-func (m *ChannelModifier) Apply(env utils.Environment, assets flows.SessionAssets, contact *flows.Contact, log flows.EventCallback) {
+func (m *ChannelModifier) Apply(env envs.Environment, assets flows.SessionAssets, contact *flows.Contact, log flows.EventCallback) {
 	// if URNs change in anyway, generate a URNs changed event
 	if contact.UpdatePreferredChannel(m.channel) {
-		log(events.NewContactURNsChangedEvent(contact.URNs().RawURNs()))
+		log(events.NewContactURNsChanged(contact.URNs().RawURNs()))
 	}
 }
 
@@ -60,11 +61,11 @@ func readChannelModifier(assets flows.SessionAssets, data json.RawMessage, missi
 	if e.Channel != nil {
 		channel = assets.Channels().Get(e.Channel.UUID)
 		if channel == nil {
-			missing(e.Channel)
+			missing(e.Channel, nil)
 			return nil, ErrNoModifier // nothing left to modify without the channel
 		}
 	}
-	return NewChannelModifier(channel), nil
+	return NewChannel(channel), nil
 }
 
 func (m *ChannelModifier) MarshalJSON() ([]byte, error) {

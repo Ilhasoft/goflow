@@ -1,13 +1,12 @@
 package runs
 
 import (
-	"encoding/json"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent/types"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/utils"
@@ -21,147 +20,78 @@ func legacyExtraKey(key string) string {
 	return key[0:utils.MinInt(len(key), 255)]
 }
 
-type legacyExtraMap map[string]interface{}
-
-func (e legacyExtraMap) Describe() string { return "legacy extra" }
-
-func (e legacyExtraMap) ToXJSON(env utils.Environment) types.XText {
-	return types.MustMarshalToXText(e)
-}
-
-func (e legacyExtraMap) Reduce(env utils.Environment) types.XPrimitive { return e.ToXJSON(env) }
-
-func (e legacyExtraMap) Resolve(env utils.Environment, key string) types.XValue {
-	key = strings.ToLower(key)
-	val, found := e[key]
-	if !found {
-		return types.NewXResolveError(e, key)
-	}
-	return e.convertToXValue(val)
-}
-
-func (e legacyExtraMap) Index(index int) types.XValue {
-	return e.Resolve(nil, strconv.Itoa(index))
-}
-
-func (e legacyExtraMap) Length() int {
-	return len(e)
-}
-
-func (e legacyExtraMap) convertToXValue(val interface{}) types.XValue {
-	switch typed := val.(type) {
-	case map[string]interface{}:
-		normalized := make(map[string]interface{}, len(typed))
-		for k, v := range typed {
-			normalized[legacyExtraKey(k)] = v
-		}
-		return legacyExtraMap(normalized)
-	case []interface{}:
-		normalized := sliceToMap(typed)
-		return legacyExtraMap(normalized)
-	case json.Number:
-		return types.RequireXNumberFromString(string(typed))
-	case string:
-		return types.NewXText(typed)
-	case bool:
-		return types.NewXBoolean(typed)
-	}
-	return nil
-}
-
-var _ types.XValue = (legacyExtraMap)(nil)
-var _ types.XResolvable = (legacyExtraMap)(nil)
-var _ types.XIndexable = (legacyExtraMap)(nil)
-
 type legacyExtra struct {
-	legacyExtraMap
-
-	run            flows.FlowRun
-	lastResultTime time.Time
+	values map[string]types.XValue
 }
 
 // creates a new legacy extra which will be lazily initialized on first call to .update()
 func newLegacyExtra(run flows.FlowRun) *legacyExtra {
-	return &legacyExtra{run: run}
-}
+	e := &legacyExtra{values: make(map[string]types.XValue)}
 
-func (e *legacyExtra) initialize() {
-	e.legacyExtraMap = make(map[string]interface{})
-
-	// if trigger params is a JSON object, we include it in @extra
-	triggerParams := e.run.Session().Trigger().Params()
-	asJSON, isJSON := triggerParams.(types.XJSONObject)
-	if isJSON {
-		values, err := utils.JSONDecodeGeneric(json.RawMessage(asJSON.XJSON))
-		if err == nil {
-			e.addValues(values)
-		}
+	// if trigger params is set, we include it in @extra
+	triggerParams := run.Session().Trigger().Params()
+	if triggerParams != nil {
+		e.addValues(triggerParams)
 	}
 
 	// if trigger has results (i.e. a flow_action type trigger with a parent run) use them too
-	asExtraContrib, isExtraContrib := e.run.Session().Trigger().(flows.LegacyExtraContributor)
+	asExtraContrib, isExtraContrib := run.Session().Trigger().(flows.LegacyExtraContributor)
 	if isExtraContrib {
-		e.addResults(asExtraContrib.LegacyExtra(), time.Time{})
+		e.addResults(asExtraContrib.LegacyExtra())
 	}
+
+	// add any existing results from this run
+	e.addResults(run.Results())
+	return e
 }
 
-// updates @legacy_extra by looking for new results since we last updated
-func (e *legacyExtra) update() {
-	// lazy initialize if necessary
-	if e.legacyExtraMap == nil {
-		e.initialize()
-	}
-
-	prevLastResultTime := e.lastResultTime
-
-	e.addResults(e.run.Results(), prevLastResultTime)
+func (e *legacyExtra) ToXValue(env envs.Environment) types.XValue {
+	return types.NewXObject(e.values)
 }
 
-// adds any results with extra to this blob of all extras
-func (e *legacyExtra) addResults(results flows.Results, after time.Time) {
-	// get all results with extra created since the last update
-	newExtras := make([]*flows.Result, 0)
-	for _, result := range results {
-		if result.Extra != nil && result.CreatedOn.After(after) {
-			newExtras = append(newExtras, result)
-		}
-		e.lastResultTime = result.CreatedOn
-	}
+func (e *legacyExtra) addResults(results flows.Results) {
 	// sort by created time
-	sort.SliceStable(newExtras, func(i, j int) bool { return newExtras[i].CreatedOn.Before(newExtras[j].CreatedOn) })
+	sortedResults := make([]*flows.Result, 0)
+	for _, result := range results {
+		sortedResults = append(sortedResults, result)
 
-	// add each extra blob to our master extra
-	for _, result := range newExtras {
-		e.legacyExtraMap[utils.Snakify(result.Name)] = string(result.Extra)
-		values, err := utils.JSONDecodeGeneric(result.Extra)
+	}
+	sort.SliceStable(sortedResults, func(i, j int) bool { return sortedResults[i].CreatedOn.Before(sortedResults[j].CreatedOn) })
 
-		// ignore unparseable extra
-		if err != nil {
-			return
-		}
-
-		e.addValues(values)
+	// add each result in order
+	for _, result := range sortedResults {
+		e.addResult(result)
 	}
 }
 
-func (e *legacyExtra) addValues(values interface{}) {
+// adds any extra from the given result
+func (e *legacyExtra) addResult(result *flows.Result) {
+	if result.Extra == nil {
+		return
+	}
+
+	e.values[utils.Snakify(result.Name)] = types.NewXText(string(result.Extra))
+
+	values := types.JSONToXValue(result.Extra)
+	e.addValues(values)
+}
+
+func (e *legacyExtra) addValues(values types.XValue) {
 	switch typed := values.(type) {
-	case map[string]interface{}:
-		for k, v := range typed {
-			e.legacyExtraMap[legacyExtraKey(k)] = v
+	case *types.XObject:
+		for _, key := range typed.Properties() {
+			value, _ := typed.Get(key)
+			e.values[legacyExtraKey(key)] = value
 		}
-	case []interface{}:
-		e.addValues(sliceToMap(typed))
+	case *types.XArray:
+		e.addValues(arrayToObject(typed))
 	}
 }
 
-func sliceToMap(s []interface{}) map[string]interface{} {
-	m := make(map[string]interface{}, len(s))
-	for i, v := range s {
-		m[strconv.Itoa(i)] = v
+func arrayToObject(array *types.XArray) *types.XObject {
+	properties := make(map[string]types.XValue, array.Count())
+	for i := 0; i < array.Count(); i++ {
+		properties[strconv.Itoa(i)] = array.Get(i)
 	}
-	return m
+	return types.NewXObject(properties)
 }
-
-var _ types.XValue = (*legacyExtra)(nil)
-var _ types.XResolvable = (*legacyExtra)(nil)

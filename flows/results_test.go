@@ -1,49 +1,42 @@
-package flows
+package flows_test
 
 import (
-	"encoding/json"
 	"testing"
+	"time"
 
-	"github.com/nyaruka/goflow/excellent"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent/types"
-	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/flows"
+	"github.com/nyaruka/goflow/test"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestResults(t *testing.T) {
-	var ERROR = types.NewXErrorf("any error")
+	env := envs.NewBuilder().Build()
 
-	var tests = []struct {
-		JSON     []byte
-		lookup   string
-		expected types.XValue
-	}{
-		{[]byte(`{}`), "key", ERROR},
-		{[]byte(`{ "name": { "result_name": "Name", "value": "Ryan Lewis", "node": "uuid", "created_on": "2000-01-01T00:00:00.000000000-00:00"}}`), `results.key`, ERROR},
-		{[]byte(`{ "name": { "result_name": "Name", "value": "Ryan Lewis", "node": "uuid", "created_on": "2000-01-01T00:00:00.000000000-00:00"}}`), `results.name`, types.NewXText("Ryan Lewis")},
-		{[]byte(`{ "last_name": { "result_name": "Last Name", "value": "Lewis", "node": "uuid", "created_on": "2000-01-01T00:00:00.000000000-00:00"}}`), `results.last_name`, types.NewXText("Lewis")},
-		{[]byte(`{ "last_name": { "result_name": "Last Name", "value": "Lewis", "node": "uuid", "created_on": "2000-01-01T00:00:00.000000000-00:00"}}`), `results["Last Name"]`, types.NewXText("Lewis")},
-	}
+	result := flows.NewResult("Beer", "skol!", "Skol", "", flows.NodeUUID("26493ebb-a254-4461-a28d-c7761784e276"), "", nil, time.Date(2019, 4, 5, 14, 16, 30, 123456, time.UTC))
+	results := flows.NewResults()
+	results.Save(result)
 
-	env := utils.NewEnvironmentBuilder().Build()
-	for _, test := range tests {
-		results := NewResults()
-		err := json.Unmarshal(test.JSON, &results)
-		if err != nil {
-			t.Errorf("Error unmarshalling: '%s'", err)
-			continue
-		}
-		context := types.NewXMap(map[string]types.XValue{"results": results})
-		value := excellent.EvaluateExpression(env, context, test.lookup)
+	assert.Equal(t, result, results.Get("beer"))
+	assert.Nil(t, results.Get("xxx"))
 
-		// don't check error equality - just check that we got an error if we expected one
-		if test.expected == ERROR {
-			assert.True(t, types.IsXError(value), "expecting error, got %T{%s} for lookup %s", value, value, test.lookup)
-		} else {
-			if !types.Equals(env, value, test.expected) {
-				t.Errorf("Expected: '%s' Got: '%s' for lookup: '%s' and Results:\n%s", test.expected, value, test.lookup, test.JSON)
-			}
-		}
-	}
+	test.AssertXEqual(t, types.NewXObject(map[string]types.XValue{
+		"__default__": types.NewXText("Beer: skol!"),
+		"beer": types.NewXObject(map[string]types.XValue{
+			"__default__":          types.NewXText("skol!"),
+			"category":             types.NewXText("Skol"),
+			"categories":           types.NewXArray(types.NewXText("Skol")),
+			"category_localized":   types.NewXText("Skol"),
+			"categories_localized": types.NewXArray(types.NewXText("Skol")),
+			"created_on":           types.NewXDateTime(time.Date(2019, 4, 5, 14, 16, 30, 123456, time.UTC)),
+			"extra":                nil,
+			"input":                types.XTextEmpty,
+			"name":                 types.NewXText("Beer"),
+			"node_uuid":            types.NewXText("26493ebb-a254-4461-a28d-c7761784e276"),
+			"value":                types.NewXText("skol!"),
+			"values":               types.NewXArray(types.NewXText("skol!")),
+		}),
+	}), flows.Context(env, results))
 }

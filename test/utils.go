@@ -5,12 +5,24 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/nyaruka/goflow/excellent/types"
 	"github.com/nyaruka/goflow/utils"
 
+	"github.com/buger/jsonparser"
 	diff "github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// AssertEqual is equivalent to assert.Equal for two XValue instances
+func AssertXEqual(t *testing.T, expected types.XValue, actual types.XValue, msgAndArgs ...interface{}) bool {
+	if !types.Equals(expected, actual) {
+		return assert.Fail(t, fmt.Sprintf("Not equal: \n"+
+			"expected: %s\n"+
+			"actual  : %s", expected, actual), msgAndArgs...)
+	}
+	return true
+}
 
 // NormalizeJSON re-formats the given JSON
 func NormalizeJSON(data json.RawMessage) ([]byte, error) {
@@ -23,11 +35,15 @@ func NormalizeJSON(data json.RawMessage) ([]byte, error) {
 
 // AssertEqualJSON checks two JSON strings for equality
 func AssertEqualJSON(t *testing.T, expected json.RawMessage, actual json.RawMessage, msg string, msgArgs ...interface{}) bool {
+	if expected == nil && actual == nil {
+		return true
+	}
+
 	expectedNormalized, err := NormalizeJSON(expected)
-	require.NoError(t, err)
+	require.NoError(t, err, "unable to normalize expected JSON: %s", string(expected))
 
 	actualNormalized, err := NormalizeJSON(actual)
-	require.NoError(t, err)
+	require.NoError(t, err, "unable to normalize actual JSON: %s", string(actual))
 
 	differ := diff.New()
 	diffs := differ.DiffMain(string(expectedNormalized), string(actualNormalized), false)
@@ -38,4 +54,18 @@ func AssertEqualJSON(t *testing.T, expected json.RawMessage, actual json.RawMess
 		return false
 	}
 	return true
+}
+
+// JSONReplace replaces a node in JSON
+func JSONReplace(data json.RawMessage, path []string, value json.RawMessage) json.RawMessage {
+	newData, err := jsonparser.Set(data, value, path...)
+	if err != nil {
+		panic("unable to replace JSON")
+	}
+	return newData
+}
+
+// JSONDelete deletes a node in JSON
+func JSONDelete(data json.RawMessage, path []string) json.RawMessage {
+	return jsonparser.Delete(data, path...)
 }

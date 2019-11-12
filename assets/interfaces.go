@@ -2,11 +2,14 @@ package assets
 
 import (
 	"encoding/json"
+
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/utils/uuids"
 )
 
 // ChannelUUID is the UUID of a channel
-type ChannelUUID utils.UUID
+type ChannelUUID uuids.UUID
 
 // ChannelRole is a role that a channel can perform
 type ChannelRole string
@@ -43,6 +46,29 @@ type Channel interface {
 	MatchPrefixes() []string
 }
 
+// ClassifierUUID is the UUID of an NLU classifier
+type ClassifierUUID uuids.UUID
+
+// Classifier is an NLU classifier.
+//
+//   {
+//     "uuid": "37657cf7-5eab-4286-9cb0-bbf270587bad",
+//     "name": "Booking",
+//     "type": "wit",
+//     "intents": ["book_flight", "book_hotel"]
+//   }
+//
+// @asset classifier
+type Classifier interface {
+	UUID() ClassifierUUID
+	Name() string
+	Type() string
+	Intents() []string
+}
+
+// FieldUUID is the UUID of a field
+type FieldUUID uuids.UUID
+
 // FieldType is the data type of values for each field
 type FieldType string
 
@@ -59,6 +85,7 @@ const (
 // Field is a custom contact property.
 //
 //   {
+//     "uuid": "d66a7823-eada-40e5-9a3a-57239d4690bf",
 //     "key": "gender",
 //     "name": "Gender",
 //     "type": "text"
@@ -66,13 +93,14 @@ const (
 //
 // @asset field
 type Field interface {
+	UUID() FieldUUID
 	Key() string
 	Name() string
 	Type() FieldType
 }
 
 // FlowUUID is the UUID of a flow
-type FlowUUID utils.UUID
+type FlowUUID uuids.UUID
 
 // Flow is graph of nodes with actions and routers.
 //
@@ -92,7 +120,7 @@ type Flow interface {
 }
 
 // GroupUUID is the UUID of a group
-type GroupUUID utils.UUID
+type GroupUUID uuids.UUID
 
 // Group is a set of contacts which can be static or dynamic (i.e. based on a query).
 //
@@ -110,7 +138,7 @@ type Group interface {
 }
 
 // LabelUUID is the UUID of a label
-type LabelUUID utils.UUID
+type LabelUUID uuids.UUID
 
 // Label is an organizational tag that can be applied to a message.
 //
@@ -162,7 +190,7 @@ type Label interface {
 //
 // @asset location
 type LocationHierarchy interface {
-	FindByPath(path string) *utils.Location
+	FindByPath(path utils.LocationPath) *utils.Location
 	FindByName(name string, level utils.LocationLevel, parent *utils.Location) []*utils.Location
 }
 
@@ -181,13 +209,57 @@ type Resthook interface {
 	Subscribers() []string
 }
 
-// AssetSource is a source of assets
-type AssetSource interface {
+type TemplateUUID uuids.UUID
+
+// Template is a message template, currently only used by WhatsApp channels
+//
+//   {
+//     "name": "revive-issue",
+//     "uuid": "14782905-81a6-4910-bc9f-93ad287b23c3",
+//     "translations": [
+//       {
+//          "language": "eng",
+//          "content": "Hi {{1}}, are you still experiencing your issue?",
+//          "channel": {
+//            "uuid": "cf26be4c-875f-4094-9e08-162c3c9dcb5b",
+//            "name": "Twilio Channel"
+//          }
+//       },
+//       {
+//          "language": "fra",
+//          "content": "Bonjour {{1}}",
+//          "channel": {
+//            "uuid": "cf26be4c-875f-4094-9e08-162c3c9dcb5b",
+//            "name": "Twilio Channel"
+//          }
+//       }
+//     ]
+//   }
+//
+// @asset template
+type Template interface {
+	UUID() TemplateUUID
+	Name() string
+	Translations() []TemplateTranslation
+}
+
+// TemplateTranslation represents a single translation for a specific template and channel
+type TemplateTranslation interface {
+	Content() string
+	Language() envs.Language
+	VariableCount() int
+	Channel() ChannelReference
+}
+
+// Source is a source of assets
+type Source interface {
 	Channels() ([]Channel, error)
+	Classifiers() ([]Classifier, error)
 	Fields() ([]Field, error)
 	Flow(FlowUUID) (Flow, error)
 	Groups() ([]Group, error)
 	Labels() ([]Label, error)
 	Locations() ([]LocationHierarchy, error)
 	Resthooks() ([]Resthook, error)
+	Templates() ([]Template, error)
 }

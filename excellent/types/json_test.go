@@ -3,30 +3,34 @@ package types_test
 import (
 	"testing"
 
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent"
 	"github.com/nyaruka/goflow/excellent/types"
-	"github.com/nyaruka/goflow/utils"
+	"github.com/nyaruka/goflow/test"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestXJSON(t *testing.T) {
-	jobj := types.JSONToXValue([]byte(`{"foo": "x", "bar": null}`)).(types.XJSONObject)
-	assert.Equal(t, `{"foo": "x", "bar": null}`, jobj.String())
-	assert.Equal(t, `json object`, jobj.Describe())
+func TestJSONToXValue(t *testing.T) {
+	test.AssertXEqual(t, types.NewXObject(map[string]types.XValue{
+		"foo": types.NewXText("x"),
+		"bar": nil,
+		"sub": types.NewXObject(map[string]types.XValue{
+			"x": types.NewXNumberFromInt(3),
+		}),
+	}), types.JSONToXValue([]byte(`{"foo": "x", "bar": null, "sub": {"x": 3}}`)))
 
-	jarr := types.JSONToXValue([]byte(`["one", "two", "three"]`)).(types.XJSONArray)
-	assert.Equal(t, `["one", "two", "three"]`, jarr.String())
-	assert.Equal(t, 3, jarr.Length())
-	assert.Equal(t, types.NewXText("two"), jarr.Index(1))
-	assert.True(t, types.IsXError(jarr.Index(7)))
-	assert.Equal(t, `json array`, jarr.Describe())
+	test.AssertXEqual(t, types.NewXArray(
+		types.NewXText("foo"),
+		types.NewXNumberFromInt(123),
+		nil,
+		types.NewXArray(types.NewXNumberFromInt(2), types.NewXNumberFromInt(3)),
+	), types.JSONToXValue([]byte(`["foo", 123, null, [2, 3]]`)))
 
-	num := types.JSONToXValue([]byte(`37.27903`)).(types.XNumber)
-	assert.Equal(t, num, types.RequireXNumberFromString(`37.27903`))
+	test.AssertXEqual(t, types.RequireXNumberFromString(`37.27903`), types.JSONToXValue([]byte(`37.27903`)))
 
-	jerr := types.JSONToXValue([]byte(`fish`)).(types.XError)
-	assert.Equal(t, `Unknown value type`, jerr.Error())
+	xerr := types.JSONToXValue([]byte(`fish`)).(types.XError)
+	assert.Equal(t, `invalid JSON`, xerr.Error())
 }
 
 func TestXJSONResolve(t *testing.T) {
@@ -37,51 +41,52 @@ func TestXJSONResolve(t *testing.T) {
 		hasError   bool
 	}{
 		// error cases
-		{nil, "json.key", nil, true},
-		{[]byte(`malformed`), "json.key", nil, true},
+		{nil, "j.key", nil, true},
+		{[]byte(`malformed`), "j.key", nil, true},
 
 		// different data types in an object
-		{[]byte(`{"foo": "x", "bar": "one"}`), "json.bar", types.NewXText("one"), false},
-		{[]byte(`{"foo": "x", "bar": 1.23}`), "json.bar", types.RequireXNumberFromString("1.23"), false},
-		{[]byte(`{"foo": "x", "bar": true}`), "json.bar", types.NewXBoolean(true), false},
-		{[]byte(`{"foo": "x", "bar": null}`), "json.bar", nil, false},
+		{[]byte(`{"foo": "x", "bar": "one"}`), "j.bar", types.NewXText("one"), false},
+		{[]byte(`{"foo": "x", "bar": 1.23}`), "j.bar", types.RequireXNumberFromString("1.23"), false},
+		{[]byte(`{"foo": "x", "bar": true}`), "j.bar", types.NewXBoolean(true), false},
+		{[]byte(`{"foo": "x", "bar": null}`), "j.bar", nil, false},
 
 		// different data types in an array
-		{[]byte(`["foo", "one"]`), "json[1]", types.NewXText("one"), false},
-		{[]byte(`["foo", 1.23]`), "json[1]", types.RequireXNumberFromString("1.23"), false},
-		{[]byte(`["foo", true]`), "json[1]", types.NewXBoolean(true), false},
-		{[]byte(`["foo", null]`), "json[1]", nil, false},
+		{[]byte(`["foo", "one"]`), "j[1]", types.NewXText("one"), false},
+		{[]byte(`["foo", 1.23]`), "j[1]", types.RequireXNumberFromString("1.23"), false},
+		{[]byte(`["foo", true]`), "j[1]", types.NewXBoolean(true), false},
+		{[]byte(`["foo", null]`), "j[1]", nil, false},
+		{[]byte(`["foo", "one"]`), "j.1", types.NewXText("one"), false},
 
-		{[]byte(`["one", "two", "three"]`), "json[0]", types.NewXText("one"), false},
-		{[]byte(`["escaped \"string\""]`), "json[0]", types.NewXText(`escaped "string"`), false},
-		{[]byte(`{"arr": ["one", "two"]}`), "json.arr[1]", types.NewXText("two"), false},
-		{[]byte(`{"arr": ["one", "two"]}`), "json.arr[1]", types.NewXText("two"), false},
-		{[]byte(`{"key": {"key2": "val2"}}`), "json.key.key2", types.NewXText("val2"), false},
-		{[]byte(`{"key": {"key-with-dash": "val2"}}`), `json.key["key-with-dash"]`, types.NewXText("val2"), false},
-		{[]byte(`{"key": {"key with space": "val2"}}`), `json.key["key with space"]`, types.NewXText("val2"), false},
+		{[]byte(`["one", "two", "three"]`), "j[0]", types.NewXText("one"), false},
+		{[]byte(`["escaped \"string\""]`), "j[0]", types.NewXText(`escaped "string"`), false},
+		{[]byte(`{"arr": ["one", "two"]}`), "j.arr[1]", types.NewXText("two"), false},
+		{[]byte(`{"arr": ["one", "two"]}`), "j.arr[1]", types.NewXText("two"), false},
+		{[]byte(`{"key": {"key2": "val2"}}`), "j.key.key2", types.NewXText("val2"), false},
+		{[]byte(`{"key": {"key-with-dash": "val2"}}`), `j.key["key-with-dash"]`, types.NewXText("val2"), false},
+		{[]byte(`{"key": {"key with space": "val2"}}`), `j.key["key with space"]`, types.NewXText("val2"), false},
 
-		{[]byte(`{"arr": ["one", "two"]}`), "json.arr", types.NewXJSONArray([]byte(`["one", "two"]`)), false},
-		{[]byte(`{"arr": {"foo": "bar"}}`), "json.arr", types.NewXJSONObject([]byte(`{"foo": "bar"}`)), false},
+		{[]byte(`{"arr": ["one", "two"]}`), "j.arr", types.NewXArray(types.NewXText("one"), types.NewXText("two")), false},
+		{[]byte(`{"arr": {"foo": "bar"}}`), "j.arr", types.NewXObject(map[string]types.XValue{"foo": types.NewXText("bar")}), false},
 
 		// resolve errors
-		{[]byte(`{"foo": "x", "bar": "one"}`), "json.zed", nil, true},
-		{[]byte(`["foo", null]`), "json.0", nil, true},
-		{[]byte(`["foo", null]`), "json[3]", nil, true},
+		{[]byte(`{"foo": "x", "bar": "one"}`), "j.zed", nil, true},
+		{[]byte(`["foo", null]`), "j.3", nil, true},
+		{[]byte(`["foo", null]`), "j[3]", nil, true},
 	}
 
-	env := utils.NewEnvironmentBuilder().Build()
-	for _, test := range jsonTests {
-		fragment := types.JSONToXValue(test.JSON)
-		context := types.NewXMap(map[string]types.XValue{"json": fragment})
+	env := envs.NewBuilder().Build()
+	for _, tc := range jsonTests {
+		fragment := types.JSONToXValue(tc.JSON)
+		context := types.NewXObject(map[string]types.XValue{"j": fragment})
 
-		value := excellent.EvaluateExpression(env, context, test.expression)
+		value := excellent.EvaluateExpression(env, context, tc.expression)
 		err, _ := value.(error)
 
-		if test.hasError {
-			assert.Error(t, err, "expected error resolving '%s' for '%s'", test.expression, test.JSON)
+		if tc.hasError {
+			assert.Error(t, err, "expected error resolving '%s' for '%s'", tc.expression, tc.JSON)
 		} else {
-			assert.NoError(t, err, "unexpected error resolving '%s' for '%s'", test.expression, test.JSON)
-			assert.Equal(t, test.expected, value, "Actual '%s' does not match expected '%s' resolving '%s' for '%s'", value, test.expected, test.expression, test.JSON)
+			assert.NoError(t, err, "unexpected error resolving '%s' for '%s'", tc.expression, tc.JSON)
+			test.AssertXEqual(t, tc.expected, value, "unexpected result resolving '%s' for '%s'", tc.expression, tc.JSON)
 		}
 	}
 }

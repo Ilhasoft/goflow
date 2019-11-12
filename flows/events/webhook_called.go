@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	RegisterType(TypeWebhookCalled, func() flows.Event { return &WebhookCalledEvent{} })
+	registerType(TypeWebhookCalled, func() flows.Event { return &WebhookCalledEvent{} })
 }
 
 // TypeWebhookCalled is the type for our webhook events
@@ -30,29 +30,29 @@ const TypeWebhookCalled string = "webhook_called"
 //
 // @event webhook_called
 type WebhookCalledEvent struct {
-	BaseEvent
+	baseEvent
 
-	URL         string              `json:"url" validate:"required"`
-	Resthook    string              `json:"resthook,omitempty"`
-	Status      flows.WebhookStatus `json:"status" validate:"required"`
-	StatusCode  int                 `json:"status_code,omitempty"`
-	ElapsedMS   int                 `json:"elapsed_ms"`
-	Request     string              `json:"request" validate:"required"`
-	Response    string              `json:"response,omitempty"`
-	BodyIgnored bool                `json:"body_ignored,omitempty"`
+	URL         string           `json:"url" validate:"required"`
+	Status      flows.CallStatus `json:"status" validate:"required"`
+	Request     string           `json:"request" validate:"required"`
+	Response    string           `json:"response"`
+	ElapsedMS   int              `json:"elapsed_ms"`
+	Resthook    string           `json:"resthook,omitempty"`
+	StatusCode  int              `json:"status_code,omitempty"`
+	BodyIgnored bool             `json:"body_ignored,omitempty"`
 }
 
-// NewWebhookCalledEvent returns a new webhook called event
-func NewWebhookCalledEvent(webhook *flows.WebhookCall) *WebhookCalledEvent {
+// NewWebhookCalled returns a new webhook called event
+func NewWebhookCalled(webhook *flows.WebhookCall) *WebhookCalledEvent {
 	return &WebhookCalledEvent{
-		BaseEvent:   NewBaseEvent(TypeWebhookCalled),
-		URL:         webhook.URL(),
-		Resthook:    webhook.Resthook(),
-		Status:      webhook.Status(),
-		StatusCode:  webhook.StatusCode(),
-		ElapsedMS:   int(webhook.TimeTaken() / time.Millisecond),
-		Request:     webhook.Request(),
-		Response:    webhook.Response(),
-		BodyIgnored: webhook.BodyIgnored(),
+		baseEvent:   newBaseEvent(TypeWebhookCalled),
+		URL:         webhook.URL,
+		Status:      webhook.Status,
+		Request:     string(webhook.Request),
+		Response:    string(webhook.Response),
+		ElapsedMS:   int(webhook.TimeTaken / time.Millisecond),
+		Resthook:    webhook.Resthook,
+		StatusCode:  webhook.StatusCode,
+		BodyIgnored: webhook.BodyIgnored,
 	}
 }

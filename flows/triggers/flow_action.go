@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/utils"
 )
 
 func init() {
-	RegisterType(TypeFlowAction, readFlowActionTrigger)
+	registerType(TypeFlowAction, readFlowActionTrigger)
 }
 
 // TypeFlowAction is a constant for sessions triggered by flow actions in other sessions
@@ -49,10 +50,18 @@ type FlowActionTrigger struct {
 	runSummary json.RawMessage
 }
 
-// NewFlowActionTrigger creates a new flow action trigger with the passed in values
-func NewFlowActionTrigger(env utils.Environment, flow *assets.FlowReference, contact *flows.Contact, runSummary json.RawMessage) *FlowActionTrigger {
+// NewFlowAction creates a new flow action trigger with the passed in values
+func NewFlowAction(env envs.Environment, flow *assets.FlowReference, contact *flows.Contact, runSummary json.RawMessage) *FlowActionTrigger {
 	return &FlowActionTrigger{
 		baseTrigger: newBaseTrigger(TypeFlowAction, env, flow, contact, nil, nil),
+		runSummary:  runSummary,
+	}
+}
+
+// NewFlowActionVoice creates a new flow action trigger with the passed in values
+func NewFlowActionVoice(env envs.Environment, flow *assets.FlowReference, contact *flows.Contact, connection *flows.Connection, runSummary json.RawMessage) *FlowActionTrigger {
+	return &FlowActionTrigger{
+		baseTrigger: newBaseTrigger(TypeFlowAction, env, flow, contact, connection, nil),
 		runSummary:  runSummary,
 	}
 }

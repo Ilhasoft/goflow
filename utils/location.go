@@ -2,22 +2,63 @@ package utils
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 )
 
 // LocationLevel is a numeric level, e.g. 0 = country, 1 = state
 type LocationLevel int
 
+// LocationPath is a location described by a path Country > State ...
+type LocationPath string
+
 const (
-	LocationPathSeparator       = ">"
-	LocationPaddedPathSeparator = " > "
+	LocationPathSeparator = ">"
+	//LocationPaddedPathSeparator = " > "
 )
+
+var spaceRegex = regexp.MustCompile(`\s+`)
+
+// IsPossibleLocationPath returns whether the given string could be a location path
+func IsPossibleLocationPath(str string) bool {
+	return strings.Contains(str, LocationPathSeparator)
+}
+
+func NewLocationPath(parts ...string) LocationPath {
+	return LocationPath(strings.Join(parts, " "+LocationPathSeparator+" "))
+}
+
+func (p LocationPath) join(name string) LocationPath {
+	return NewLocationPath(string(p), name)
+}
+
+// Name returns the name of the location referenced
+func (p LocationPath) Name() string {
+	parts := strings.Split(string(p), LocationPathSeparator)
+	return strings.TrimSpace(parts[len(parts)-1])
+}
+
+// Normalize normalizes this location path
+func (p LocationPath) Normalize() LocationPath {
+	// trim any period at end
+	normalized := strings.TrimRight(string(p), ".")
+
+	// normalize casing and spacing between location parts
+	parts := strings.Split(normalized, LocationPathSeparator)
+	for i, part := range parts {
+		part = spaceRegex.ReplaceAllString(strings.TrimSpace(part), " ")
+		part = strings.Title(strings.ToLower(part))
+		parts[i] = part
+	}
+
+	return NewLocationPath(parts...)
+}
 
 // Location represents a single Location
 type Location struct {
 	level    LocationLevel
 	name     string
-	path     string
+	path     LocationPath
 	aliases  []string
 	parent   *Location
 	children []*Location
@@ -35,7 +76,7 @@ func (l *Location) Level() LocationLevel { return l.level }
 func (l *Location) Name() string { return l.name }
 
 // Path gets the full path of this location
-func (l *Location) Path() string { return l.path }
+func (l *Location) Path() LocationPath { return l.path }
 
 // Aliases gets the aliases of this location
 func (l *Location) Aliases() []string { return l.aliases }
@@ -46,7 +87,7 @@ func (l *Location) Parent() *Location { return l.parent }
 // Children gets the children of this location
 func (l *Location) Children() []*Location { return l.children }
 
-func (l *Location) String() string { return l.path }
+func (l *Location) String() string { return string(l.path) }
 
 // utility for traversing the location hierarchy
 type locationVisitor func(Location *Location)
@@ -58,13 +99,13 @@ func (l *Location) visit(visitor locationVisitor) {
 	}
 }
 
-type locationPathLookup map[string]*Location
+type locationPathLookup map[LocationPath]*Location
 
-func (p locationPathLookup) addLookup(path string, location *Location) {
-	p[strings.ToLower(path)] = location
+func (p locationPathLookup) addLookup(path LocationPath, location *Location) {
+	p[path.Normalize()] = location
 }
 
-func (p locationPathLookup) lookup(path string) *Location { return p[strings.ToLower(path)] }
+func (p locationPathLookup) lookup(path LocationPath) *Location { return p[path.Normalize()] }
 
 // location names aren't always unique in a given level - i.e. you can have two wards with the same name, but different parents
 type locationNameLookup map[string][]*Location
@@ -98,16 +139,16 @@ func (h *LocationHierarchy) initializeFromRoot(root *Location, numLevels int) {
 	h.levelLookups = make([]locationNameLookup, numLevels)
 	h.pathLookup = make(locationPathLookup)
 
-	for l := 0; l < numLevels; l++ {
-		h.levelLookups[l] = make(locationNameLookup)
+	for i := 0; i < numLevels; i++ {
+		h.levelLookups[i] = make(locationNameLookup)
 	}
 
 	// traverse the hierarchy to setup paths and lookups
 	root.visit(func(location *Location) {
 		if location.parent != nil {
-			location.path = strings.Join([]string{location.parent.path, location.name}, LocationPaddedPathSeparator)
+			location.path = location.parent.path.join(location.name)
 		} else {
-			location.path = location.name
+			location.path = LocationPath(location.name)
 		}
 
 		h.pathLookup.addLookup(location.path, location)
@@ -134,8 +175,8 @@ func (h *LocationHierarchy) Root() *Location {
 func (h *LocationHierarchy) FindByName(name string, level LocationLevel, parent *Location) []*Location {
 
 	// try it as a path first if it looks possible
-	if level == 0 || strings.Contains(name, LocationPathSeparator) {
-		match := h.pathLookup.lookup(name)
+	if level == 0 || IsPossibleLocationPath(name) {
+		match := h.pathLookup.lookup(LocationPath(name))
 		if match != nil {
 			return []*Location{match}
 		}
@@ -147,9 +188,9 @@ func (h *LocationHierarchy) FindByName(name string, level LocationLevel, parent 
 			// if a parent is specified, filter the matches by it
 			if parent != nil {
 				withParent := make([]*Location, 0)
-				for m := range matches {
-					if matches[m].parent == parent {
-						withParent = append(withParent, matches[m])
+				for i := range matches {
+					if matches[i].parent == parent {
+						withParent = append(withParent, matches[i])
 					}
 				}
 				return withParent
@@ -162,8 +203,8 @@ func (h *LocationHierarchy) FindByName(name string, level LocationLevel, parent 
 }
 
 // FindByPath looks for a location in the hierarchy with the given path
-func (h *LocationHierarchy) FindByPath(path string) *Location {
-	return h.pathLookup.lookup(strings.ToLower(path))
+func (h *LocationHierarchy) FindByPath(path LocationPath) *Location {
+	return h.pathLookup.lookup(path)
 }
 
 func (h *LocationHierarchy) UnmarshalJSON(data []byte) error {
@@ -196,8 +237,8 @@ func locationFromEnvelope(envelope *locationEnvelope, currentLevel LocationLevel
 	}
 
 	location.children = make([]*Location, len(envelope.Children))
-	for c := range envelope.Children {
-		location.children[c] = locationFromEnvelope(envelope.Children[c], currentLevel+1, location)
+	for i := range envelope.Children {
+		location.children[i] = locationFromEnvelope(envelope.Children[i], currentLevel+1, location)
 	}
 
 	return location

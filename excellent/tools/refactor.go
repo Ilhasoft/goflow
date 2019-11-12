@@ -80,13 +80,20 @@ func (v *refactorVisitor) VisitNumberLiteral(ctx *gen.NumberLiteralContext) inte
 }
 
 // VisitDotLookup deals with lookups like foo.0 or foo.bar
+func (v *refactorVisitor) VisitContextReference(ctx *gen.ContextReferenceContext) interface{} {
+	return strings.ToLower(ctx.NAME().GetText())
+}
+
+// VisitDotLookup deals with lookups like foo.bar
 func (v *refactorVisitor) VisitDotLookup(ctx *gen.DotLookupContext) interface{} {
-	return fmt.Sprintf("%s.%s", v.Visit(ctx.Atom(0)), v.Visit(ctx.Atom(1)))
+	property := ctx.NAME().GetText()
+
+	return fmt.Sprintf("%s.%s", v.Visit(ctx.Atom()), strings.ToLower(property))
 }
 
 // VisitFunctionCall deals with function calls like TITLE(foo.bar)
 func (v *refactorVisitor) VisitFunctionCall(ctx *gen.FunctionCallContext) interface{} {
-	functionName := strings.ToLower(ctx.Fnname().GetText())
+	functionName := v.Visit(ctx.Atom())
 
 	var params []string
 	if ctx.Parameters() != nil {
@@ -126,11 +133,6 @@ func (v *refactorVisitor) VisitNull(ctx *gen.NullContext) interface{} {
 // VisitArrayLookup deals with lookups such as foo[5] or foo["key with spaces"]
 func (v *refactorVisitor) VisitArrayLookup(ctx *gen.ArrayLookupContext) interface{} {
 	return fmt.Sprintf("%s[%s]", v.Visit(ctx.Atom()), v.Visit(ctx.Expression()))
-}
-
-// VisitContextReference deals with references to variables in the context such as "foo"
-func (v *refactorVisitor) VisitContextReference(ctx *gen.ContextReferenceContext) interface{} {
-	return ctx.GetText()
 }
 
 // VisitAtomReference deals with visiting a single atom in our expression

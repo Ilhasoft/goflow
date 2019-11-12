@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/nyaruka/goflow/excellent"
+	"github.com/nyaruka/goflow/excellent/functions"
 	"github.com/nyaruka/goflow/excellent/gen"
 
 	"github.com/antlr/antlr4/runtime/Go/antlr"
@@ -52,12 +53,34 @@ func (v *auditContextVisitor) VisitParse(ctx *gen.ParseContext) interface{} {
 	return v.Visit(ctx.Expression())
 }
 
-// VisitDotLookup deals with lookups like foo.0 or foo.bar
+// VisitContextReference deals with root variables in the context
+func (v *auditContextVisitor) VisitContextReference(ctx *gen.ContextReferenceContext) interface{} {
+	name := ctx.NAME().GetText()
+
+	function := functions.Lookup(name)
+	if function == nil {
+		path := []string{name}
+		v.callback(path)
+		return path
+	}
+
+	return nil
+}
+
+// VisitDotLookup deals with lookups like foo.bar
 func (v *auditContextVisitor) VisitDotLookup(ctx *gen.DotLookupContext) interface{} {
-	path, isPath := v.Visit(ctx.Atom(0)).([]string)
-	key := ctx.Atom(1).GetText()
+	path, isPath := v.Visit(ctx.Atom()).([]string)
+
+	var lookup string
+
+	if ctx.NAME() != nil {
+		lookup = ctx.NAME().GetText()
+	} else {
+		lookup = ctx.INTEGER().GetText()
+	}
+
 	if isPath {
-		path = append(path, key)
+		path = append(path, lookup)
 		v.callback(path)
 		return path
 	}
@@ -74,13 +97,6 @@ func (v *auditContextVisitor) VisitArrayLookup(ctx *gen.ArrayLookupContext) inte
 		return path
 	}
 	return nil
-}
-
-// VisitContextReference deals with references to variables in the context such as "foo"
-func (v *auditContextVisitor) VisitContextReference(ctx *gen.ContextReferenceContext) interface{} {
-	path := []string{ctx.GetText()}
-	v.callback(path)
-	return path
 }
 
 // VisitTextLiteral deals with string literals such as "asdf"

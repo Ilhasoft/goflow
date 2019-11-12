@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/flows/events"
 	"github.com/nyaruka/goflow/utils"
 )
 
 func init() {
-	RegisterType(TypeRunExpiration, readRunExpirationResume)
+	registerType(TypeRunExpiration, readRunExpirationResume)
 }
 
 // TypeRunExpiration is the type for resuming a session when a run has expired
@@ -36,8 +37,8 @@ type RunExpirationResume struct {
 	baseResume
 }
 
-// NewRunExpirationResume creates a new run expired resume with the passed in values
-func NewRunExpirationResume(env utils.Environment, contact *flows.Contact) *RunExpirationResume {
+// NewRunExpiration creates a new run expired resume with the passed in values
+func NewRunExpiration(env envs.Environment, contact *flows.Contact) *RunExpirationResume {
 	return &RunExpirationResume{
 		baseResume: newBaseResume(TypeRunExpiration, env, contact),
 	}
@@ -46,7 +47,7 @@ func NewRunExpirationResume(env utils.Environment, contact *flows.Contact) *RunE
 // Apply applies our state changes and saves any events to the run
 func (r *RunExpirationResume) Apply(run flows.FlowRun, logEvent flows.EventCallback) error {
 	run.Exit(flows.RunStatusExpired)
-	logEvent(events.NewRunExpiredEvent(run))
+	logEvent(events.NewRunExpired(run))
 
 	return r.baseResume.Apply(run, logEvent)
 }

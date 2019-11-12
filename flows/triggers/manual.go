@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 
 	"github.com/nyaruka/goflow/assets"
+	"github.com/nyaruka/goflow/envs"
 	"github.com/nyaruka/goflow/excellent/types"
 	"github.com/nyaruka/goflow/flows"
 	"github.com/nyaruka/goflow/utils"
 )
 
 func init() {
-	RegisterType(TypeManual, readManualTrigger)
+	registerType(TypeManual, readManualTrigger)
 }
 
 // TypeManual is the type for manually triggered sessions
@@ -34,15 +35,23 @@ type ManualTrigger struct {
 	baseTrigger
 }
 
-// NewManualTrigger creates a new manual trigger
-func NewManualTrigger(env utils.Environment, flow *assets.FlowReference, contact *flows.Contact, params types.XValue) flows.Trigger {
+// NewManual creates a new manual trigger
+func NewManual(env envs.Environment, flow *assets.FlowReference, contact *flows.Contact, params *types.XObject) flows.Trigger {
+	if params == nil {
+		params = types.XObjectEmpty
+	}
+
 	return &ManualTrigger{
 		baseTrigger: newBaseTrigger(TypeManual, env, flow, contact, nil, params),
 	}
 }
 
-// NewManualVoiceTrigger creates a new manual trigger with a channel connection for voice
-func NewManualVoiceTrigger(env utils.Environment, flow *assets.FlowReference, contact *flows.Contact, connection *flows.Connection, params types.XValue) flows.Trigger {
+// NewManualVoice creates a new manual trigger with a channel connection for voice
+func NewManualVoice(env envs.Environment, flow *assets.FlowReference, contact *flows.Contact, connection *flows.Connection, params *types.XObject) flows.Trigger {
+	if params == nil {
+		params = types.XObjectEmpty
+	}
+
 	return &ManualTrigger{
 		baseTrigger: newBaseTrigger(TypeManual, env, flow, contact, connection, params),
 	}
